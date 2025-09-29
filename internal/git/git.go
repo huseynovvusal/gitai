@@ -1,7 +1,6 @@
 package git
 
 import (
-	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -77,9 +76,6 @@ func GetChangesForFiles(files []string) (string, error) {
 	}
 
 	args := append([]string{"diff", "--"}, clean...)
-
-	// ! Debug
-	fmt.Println("Git args:", args)
 
 	out, err := exec.Command("git", args...).Output()
 
