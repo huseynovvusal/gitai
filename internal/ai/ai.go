@@ -83,7 +83,6 @@ func CallGemini(systemMessage string, userMessage string, maxTokens int32, tempe
 }
 
 func CallOllama(systemMessage string, userMessage string) (string, error) {
-	// apiPath := "/usr/local/bin/ollama"
 	apiPath := os.Getenv("OLLAMA_API_PATH")
 
 	if apiPath == "" {
@@ -111,16 +110,54 @@ func CallOllama(systemMessage string, userMessage string) (string, error) {
 
 }
 
-func GenerateCommitMessage(diff string, status string) (string, error) {
+type Provider string
+
+const (
+	ProviderGPT    Provider = "gpt"
+	ProviderGemini Provider = "gemini"
+	ProviderOllama Provider = "ollama"
+	ProviderNone   Provider = ""
+)
+
+func (p Provider) IsValid() bool {
+	switch p {
+	case ProviderGPT, ProviderGemini, ProviderOllama, ProviderNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// ParseProvider parses a string into a Provider (case-insensitive).
+func ParseProvider(s string) (Provider, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "gpt", "openai", "gpt3", "gpt3.5", "gpt4":
+		return ProviderGPT, nil
+	case "gemini", "google":
+		return ProviderGemini, nil
+	case "ollama", "local":
+		return ProviderOllama, nil
+	case "", "none":
+		return ProviderNone, nil
+	default:
+		return ProviderNone, fmt.Errorf("unknown provider: %s", s)
+	}
+}
+
+func GenerateCommitMessage(provider Provider, diff string, status string) (string, error) {
 	systemMessage := "You are a highly skilled software engineer with deep expertise in crafting precise, professional, and conventional git commit messages. Given a git diff and status, generate a single, clear, and accurate commit message that succinctly summarizes the intent and scope of the changes. Only output the commit message itself, with no explanations, prefixes, formatting, or any other text. The output must be ready to use as a commit message and strictly adhere to best practices."
 
 	// TODO: Remove whitespaces from diff and status to save tokens
-
 	userMessage := "diff: " + diff + "\n\nstatus: " + status
-	// maxTokens := param.NewOpt[int64](60)
-	// temperature := param.NewOpt(0.7)
 
-	// return CallGPT(systemMessage, userMessage, maxTokens, temperature)
-	// return CallOllama(systemMessage, userMessage)
-	return CallGemini(systemMessage, userMessage, 256, 0.7)
+	switch provider {
+	case ProviderGPT:
+		return CallGPT(systemMessage, userMessage, param.NewOpt[int64](256), param.NewOpt(0.7))
+	case ProviderGemini:
+		return CallGemini(systemMessage, userMessage, 256, 0.7)
+	case ProviderOllama:
+		return CallOllama(systemMessage, userMessage)
+	default:
+		return "", fmt.Errorf("invalid AI provider: %s", provider)
+	}
 }

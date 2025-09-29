@@ -42,9 +42,10 @@ type AIMessageModel struct {
 	spinner       spinner.Model
 	errMsg        string
 	cancel        bool
+	provider      ai.Provider
 }
 
-func NewAIMessageModel(files []string) AIMessageModel {
+func NewAIMessageModel(files []string, provider ai.Provider) AIMessageModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
@@ -56,10 +57,11 @@ func NewAIMessageModel(files []string) AIMessageModel {
 		spinner:       s,
 		errMsg:        "",
 		cancel:        false,
+		provider:      provider,
 	}
 }
 
-func runAIAsync(files []string) tea.Cmd {
+func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
 	return func() tea.Msg {
 		diff, err := git.GetChangesForFiles(files)
 
@@ -72,7 +74,7 @@ func runAIAsync(files []string) tea.Cmd {
 			panic(err)
 		}
 
-		commitMessage, err := ai.GenerateCommitMessage(diff, status)
+		commitMessage, err := ai.GenerateCommitMessage(provider, diff, status)
 		if err != nil {
 			panic(err)
 		}
@@ -98,7 +100,7 @@ func runPushAsync() tea.Cmd {
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		runAIAsync(m.files),
+		runAIAsync(m.provider, m.files),
 	)
 }
 

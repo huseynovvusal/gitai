@@ -51,6 +51,21 @@ Generate commit message suggestions using the _interactive TUI_:
 gitai suggest
 ```
 
+Selecting AI provider (flag or env)
+
+You can choose which AI backend to use with a flag or environment variable. The `--provider` flag overrides the env var for that run.
+
+```sh
+# use local Ollama via flag
+gitai suggest --provider=ollama
+
+# use OpenAI GPT
+gitai suggest --provider=gpt
+
+# use Gemini
+gitai suggest --provider=gemini
+```
+
 `gitai suggest` will:
 
 - list changed files (using `git status --porcelain`)
