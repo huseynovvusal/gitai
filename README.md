@@ -2,6 +2,10 @@
 
 Gitai is an open-source CLI tool that helps developers generate **high-quality git commit messages** using AI. It inspects repository changes (diff + status) and provides concise, actionable suggestions via an interactive TUI.
 
+Below is a quick animated demo of gitai running in a terminal:
+
+![Gitai usage demo](./assets/usage.gif)
+
 The project supports multiple AI backends (OpenAI, Google Gemini via genai, and local models via Ollama) and is intended to be used as a developer helper (interactive CLI, pre-commit hooks, CI helpers).
 
 ## ✨ Key features
