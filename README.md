@@ -1,149 +1,155 @@
-# Gitai 🤖✨
+# 🤖 **Gitai** — AI-powered Git Assistant
 
-Your AI-Powered Git Companion
+Gitai is an open-source CLI tool that helps developers generate **high-quality git commit messages** using AI. It inspects repository changes (diff + status) and provides concise, actionable suggestions via an interactive TUI.
 
----
+Below is a quick animated demo of gitai running in a terminal:
 
-## What is Gitai?
+![Gitai usage demo](./assets/usage.gif)
 
-**Gitai** is a modern CLI tool that leverages AI to help you write clear, concise, and professional git commit messages based on your repository’s changes.  
-No more writer’s block or vague commit messages—let AI do the heavy lifting!
+The project supports multiple AI backends (OpenAI, Google Gemini via genai, and local models via Ollama) and is intended to be used as a developer helper (interactive CLI, pre-commit hooks, CI helpers).
 
----
+## ✨ Key features
 
-## Screenshot
+- **AI-generated commit message suggestions** based on repo diffs
+- _Interactive TUI_ to select files and review suggestions 🖱️
+- Pluggable AI backends: OpenAI, Google GenAI, Ollama (local)
+- Small single-binary distribution (Go) ⚙️
 
-![Gitai usage screenshot](assets/image1.png)
+## ⚡️ Quick start
 
----
+### 🛠️ Prerequisites
 
-## Features 🚀
+- Go 1.20+ (Go modules are used; CONTRIBUTING recommends Go 1.24+ for development)
+- One of the supported AI providers (optional):
+  - OpenAI API key (OPENAI_API_KEY)
+  - Google API key for genai (GOOGLE_API_KEY)
+  - Ollama binary available and OLLAMA_API_PATH set (for local models)
 
-- **AI-Generated Commit Messages:**  
-  Generate meaningful commit messages from your git diff and status.
-- **Detailed or Concise:**  
-  Use `--detailed` for a more comprehensive message.
-- **Automatic Staging, Commit & Push:**  
-  Use `--add` to stage all changes, `--commit` to commit instantly, and `--push` to push after committing.
-- **Interactive Loader:**  
-  Enjoy a smooth CLI experience with a live spinner while AI works.
-- **Flexible Command Structure:**  
-  Use `gitai gen commit_message` (or aliases like `cm`, `cmsg`) for commit message generation.
+### 📦 Build and install
 
----
-
-## Planned Features 🛠️
-
-- **Conventional Commit Support** 📝  
-  Option to generate messages in [Conventional Commits](https://www.conventionalcommits.org/) format.
-- **Branch Name Suggestions** 🌿  
-  Let AI suggest branch names based on your changes.
-- **Pre-commit Hook Integration** 🪝  
-  Seamlessly integrate Gitai as a git pre-commit hook.
-- **Commit Message Editing** ✏️  
-  Approve or edit the AI-generated message before committing.
-- **Multi-language Support** 🌐  
-  Generate commit messages in different languages.
-- **Summary/Explanation Mode** 📄  
-  Summarize code changes or explain diffs in plain English.
-- **History and Undo** ⏪  
-  Show a history of generated messages and allow undoing the last commit.
-- **Custom AI Prompts** 🛠️  
-  Customize the prompt sent to the AI for tailored messages.
-- **Integration with Issue Trackers** 🔗  
-  Automatically reference issue numbers or pull request IDs in messages.
-- **Quality Checks** ✅  
-  Lint or check the generated message for length, clarity, or forbidden words.
-- **Batch Mode** 📦  
-  Generate commit messages for multiple commits (e.g., for rebasing or squashing).
-- **Config File Support** ⚙️  
-  Allow user configuration via a `.gitai.yaml` or similar file.
-- **Stats and Analytics** 📊  
-  Show stats about commit message usage, length, or AI performance.
-
----
-
-## Installation 🏗️
-
-### 1. Build and Install
+1. Clone the repository and build:
 
 ```sh
 git clone https://github.com/yourusername/gitai.git
 cd gitai
+make build
+```
+
+1. Install (**recommended**)
+
+```sh
 make install
 ```
 
-This will build and move the `gitai` binary to `/usr/local/bin/`.
+The `make install` target builds the `gitai` binary and moves it to `/usr/local/bin/` (may prompt for sudo). Alternatively copy `./bin/gitai` to a directory in your PATH.
 
-### 2. Or Build Locally
+### ▶️ Run (example)
 
-```sh
-make build
-# Then run from ./bin/gitai or add ./bin to your PATH
-```
-
----
-
-## Usage 🧑‍💻
+Generate commit message suggestions using the _interactive TUI_:
 
 ```sh
-gitai gen commit_message [flags]
+gitai suggest
 ```
 
-or using aliases:
+Selecting AI provider (flag or env)
+
+You can choose which AI backend to use with a flag or environment variable. The `--provider` flag overrides the env var for that run.
 
 ```sh
-gitai gen cm [flags]
-gitai gen cmsg [flags]
+# use local Ollama via flag
+gitai suggest --provider=ollama
+
+# use OpenAI GPT
+gitai suggest --provider=gpt
+
+# use Gemini
+gitai suggest --provider=gemini
 ```
 
-### Common Flags
+`gitai suggest` will:
 
-- `--detailed, -d`  
-  Generate a more detailed commit message.
-- `--add, -a`  
-  Stage all changes before generating the commit message.
-- `--commit, -c`  
-  Commit with the generated message.
-- `--push, -p`  
-  Push changes after committing.
+- list changed files (using `git status --porcelain`)
+- allow selecting files via an interactive file selector
+- fetch diffs for selected files and call the configured AI backend to produce suggestions
 
-### Shorthand Usage Examples
+See `internal/tui/suggest` for the implementation of the flow.
 
-You can combine short flags for convenience:
+## 🔧 Configuration
+
+**API keys and settings are provided via environment variables:**
+
+- `OPENAI_API_KEY` — API key for OpenAI (for GPT-3.5/4 series)
+- `GOOGLE_API_KEY` — API key used by Google GenAI client
+- `OLLAMA_API_PATH` — path to the Ollama binary for local model calls (e.g. `/usr/local/bin/ollama`)
+
+_Set these in your shell or CI environment._ Example:
 
 ```sh
-gitai gen cm -d
-gitai gen cm -a -c
-gitai gen cm -a -c -p
-gitai gen cm -cap   # Equivalent to --add --commit --push
+export OPENAI_API_KEY="sk-..."
+export GOOGLE_API_KEY="..."
+export OLLAMA_API_PATH="/usr/local/bin/ollama"
 ```
 
----
+## ⚙️ Behaviour and defaults
 
-## Interactive Loader
+- The code includes adapters for multiple backends. The current default selection is implemented in **`internal/ai/ai.go`**. Edit that file to change preference/selection order if you need a different default.
 
-While the AI generates your commit message, Gitai displays a live spinner for a smooth CLI experience.
+## 🧩 How it works (internals)
 
----
+Core components live under `internal/`:
 
-## Help
+- `internal/ai` — adapters for AI backends and the main prompt (`GenerateCommitMessage`)
+- `internal/git` — helpers that run git commands and parse diffs/status (helpers used by the TUI)
+- `internal/tui/suggest` — TUI flow (file selector → AI message view)
 
-See all commands and options:
+The entrypoint is `main.go` which dispatches to the Cobra-based CLI under `cmd/`.
+
+## 🧑‍💻 Development
+
+To run locally while developing:
+
+1. Ensure Go is installed and `GOPATH`/`GOMOD` are configured (this repo uses Go modules).
+2. Run the CLI directly from source:
 
 ```sh
-gitai --help
-gitai gen commit_message --help
+go run ./main.go suggest
 ```
 
----
+### 🧪 Running unit tests
 
-## Contributing 🤝
+If tests are added, run them with:
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+```sh
+go test ./...
+```
 
----
+### ➕ Adding a new AI backend
 
-## License
+1. Add a new adapter under `internal/ai` that implements a function returning (string, error).
+2. Wire it into `GenerateCommitMessage` or create a configuration switch.
 
-MIT © Vusal Huseynov
+## 🤝 Contributing
+
+Contributions are welcome. Please follow the guidelines in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Suggested contribution workflow:
+
+1. Fork the repo and create a topic branch
+2. Implement your feature or fix
+3. Add/adjust tests where appropriate
+4. Open a pull request describing the change and rationale
+
+If you'd like help designing an enhancement (hooks, CI integrations, new backends), open an issue first to discuss.
+
+## 🔒 Security & Privacy
+
+- The tool may send diffs and repository content to third-party AI providers when generating messages — treat this like any other service that may upload code. Do not send secrets or sensitive data to remote AI providers.
+- If you need an offline-only workflow, prefer running local models via Ollama and keep `OLLAMA_API_PATH` configured.
+
+## 📜 License
+
+This project is released under the MIT License. See [LICENSE](LICENSE) for details.
+
+## 👤 Authors
+
+Vusal Huseynov — original author
