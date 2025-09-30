@@ -24,6 +24,7 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
   - OpenAI API key (OPENAI_API_KEY)
   - Google API key for genai (GOOGLE_API_KEY)
   - Ollama binary available and OLLAMA_API_PATH set (for local models)
+  - Gemini cli installed 
 
 ### 📦 Build and install
 
@@ -64,6 +65,10 @@ gitai suggest --provider=gpt
 
 # use Gemini
 gitai suggest --provider=gemini
+
+
+# use Gemini cli 
+gitai suggest --provider=gemini_cli
 ```
 
 `gitai suggest` will:
