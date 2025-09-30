@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"github.com/yubiquita/gemini-cli-wrapper"
 	"os"
 	"os/exec"
 	"strings"
@@ -110,18 +111,32 @@ func CallOllama(systemMessage string, userMessage string) (string, error) {
 
 }
 
+func CallGeminiCLI(systemMessage, userMessage string) (string, error) {
+	prompt := fmt.Sprintf("System: %s\nUser: %s", systemMessage, userMessage)
+
+	client := geminicli.NewClient()
+
+	resp, err := client.Execute(prompt)
+	if err != nil {
+		return "", err
+	}
+
+	return resp, nil
+}
+
 type Provider string
 
 const (
-	ProviderGPT    Provider = "gpt"
-	ProviderGemini Provider = "gemini"
-	ProviderOllama Provider = "ollama"
-	ProviderNone   Provider = ""
+	ProviderGPT      Provider = "gpt"
+	ProviderGemini   Provider = "gemini"
+	ProviderOllama   Provider = "ollama"
+	ProvideGeminiCLI Provider = "geminicli"
+	ProviderNone     Provider = ""
 )
 
 func (p Provider) IsValid() bool {
 	switch p {
-	case ProviderGPT, ProviderGemini, ProviderOllama, ProviderNone:
+	case ProviderGPT, ProviderGemini, ProviderOllama, ProviderNone, ProvideGeminiCLI:
 		return true
 	default:
 		return false
@@ -135,6 +150,8 @@ func ParseProvider(s string) (Provider, error) {
 		return ProviderGPT, nil
 	case "gemini", "google":
 		return ProviderGemini, nil
+	case "geminicli", "gemini_cli", "gemini_wrapper", "gemini-cli", "gemini-wrapper":
+		return ProvideGeminiCLI, nil
 	case "ollama", "local":
 		return ProviderOllama, nil
 	case "", "none":
@@ -157,6 +174,9 @@ func GenerateCommitMessage(provider Provider, diff string, status string) (strin
 		return CallGemini(systemMessage, userMessage, 256, 0.7)
 	case ProviderOllama:
 		return CallOllama(systemMessage, userMessage)
+	case ProvideGeminiCLI:
+		return CallGeminiCLI(systemMessage, userMessage)
+
 	default:
 		return "", fmt.Errorf("invalid AI provider: %s", provider)
 	}
