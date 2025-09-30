@@ -5,14 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-)
 
-var (
-	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	checkedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	fileStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
-	selectedStyle = lipgloss.NewStyle().Bold(true)
+	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
 
 type FileSelectorModel struct {
@@ -83,12 +77,12 @@ func (m *FileSelectorModel) View() string {
 	var b strings.Builder
 
 	if m.done {
-		header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).Render("Selected files for commit:")
+		header := shared.HeaderStyle.Render("Selected files for commit:")
 		b.WriteString("\n" + header + "\n")
 
 		for i, file := range m.files {
 			if m.selected[i] {
-				line := fmt.Sprintf(" - %s", fileStyle.Render(file))
+				line := fmt.Sprintf(" - %s", shared.FileStyle.Render(file))
 				b.WriteString(line + "\n")
 			}
 		}
@@ -96,25 +90,25 @@ func (m *FileSelectorModel) View() string {
 		return b.String()
 	}
 
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).Render("Select files to include in commit:")
+	header := shared.HeaderStyle.Render("Select files to include in commit:")
 	b.WriteString("\n" + header + "\n")
 
 	for i, file := range m.files {
 		var checked string
 
 		if m.selected[i] {
-			checked = checkedStyle.Render("[x]")
+			checked = shared.CheckedStyle.Render("[x]")
 		} else {
-			checked = checkedStyle.Render("[ ]")
+			checked = shared.CheckedStyle.Render("[ ]")
 		}
 
 		cursor := " "
 
-		line := fmt.Sprintf("%s %s %s", cursor, checked, fileStyle.Render(file))
+		line := fmt.Sprintf("%s %s %s", cursor, checked, shared.FileStyle.Render(file))
 
 		if m.cursor == i {
-			cursor = cursorStyle.Render(">")
-			line = selectedStyle.Render(fmt.Sprintf("%s %s %s", cursor, checked, fileStyle.Render(file)))
+			cursor = shared.CursorStyle.Render(">")
+			line = shared.SelectedStyle.Render(fmt.Sprintf("%s %s %s", cursor, checked, shared.FileStyle.Render(file)))
 		}
 
 		b.WriteString(line + "\n")
