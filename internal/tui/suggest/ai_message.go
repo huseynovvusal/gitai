@@ -15,6 +15,10 @@ type aiDoneMsg struct {
 	message string
 }
 
+type aiErrorMsg struct {
+	err error
+}
+
 type commitResultMsg struct {
 	err error
 }
@@ -66,17 +70,17 @@ func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
 		diff, err := git.GetChangesForFiles(files)
 
 		if err != nil {
-			panic(err)
+			return aiErrorMsg{err: err}
 		}
 
 		status, err := git.GetStatus()
 		if err != nil {
-			panic(err)
+			return aiErrorMsg{err: err}
 		}
 
 		commitMessage, err := ai.GenerateCommitMessage(provider, diff, status)
 		if err != nil {
-			panic(err)
+			return aiErrorMsg{err: err}
 		}
 
 		return aiDoneMsg{message: commitMessage}
@@ -142,6 +146,10 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = StateGenerated
 		return m, nil
 
+	case aiErrorMsg:
+		m.state = StateError
+		m.errMsg = msg.err.Error()
+		return m, nil
 	case commitResultMsg:
 		if msg.err != nil {
 			m.state = StateError
@@ -169,7 +177,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m AIMessageModel) View() string {
+func (m *AIMessageModel) View() string {
 	if m.cancel {
 		return shared.ErrorStyle.Render("Commit cancelled.") + "\n"
 	}
