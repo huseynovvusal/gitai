@@ -2,10 +2,12 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/yubiquita/gemini-cli-wrapper"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,7 +17,10 @@ import (
 	"google.golang.org/genai"
 )
 
-func CallGPT(systemMessage string, userMessage string, maxTokens param.Opt[int64], temperature param.Opt[float64]) (string, error) {
+const temperature = 0.7
+const maxToken = 256
+
+func CallGPT(systemMessage string, userMessage string, maxTokens int64, temperature float64) (string, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 
 	if apiKey == "" {
@@ -30,8 +35,8 @@ func CallGPT(systemMessage string, userMessage string, maxTokens param.Opt[int64
 			openai.SystemMessage(systemMessage),
 			openai.UserMessage(userMessage),
 		},
-		MaxTokens:   maxTokens,
-		Temperature: temperature,
+		MaxTokens:   param.NewOpt(maxTokens),
+		Temperature: param.NewOpt(temperature),
 	})
 
 	if err != nil {
@@ -99,7 +104,7 @@ func CallOllama(systemMessage string, userMessage string) (string, error) {
 
 	out, err := cmd.CombinedOutput()
 
-	if ctx.Err() == context.DeadlineExceeded {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return "", fmt.Errorf("ollama command timed out")
 	}
 
@@ -161,17 +166,16 @@ func ParseProvider(s string) (Provider, error) {
 	}
 }
 
-func GenerateCommitMessage(provider Provider, diff string, status string) (string, error) {
-	systemMessage := "You are a highly skilled software engineer with deep expertise in crafting precise, professional, and conventional git commit messages. Given a git diff and status, generate a single, clear, and accurate commit message that succinctly summarizes the intent and scope of the changes. Only output the commit message itself, with no explanations, prefixes, formatting, or any other text. The output must be ready to use as a commit message and strictly adhere to best practices."
+var whitespaceRegex = regexp.MustCompile(`\s+`)
 
-	// TODO: Remove whitespaces from diff and status to save tokens
-	userMessage := "diff: " + diff + "\n\nstatus: " + status
+func GenerateCommitMessage(provider Provider, diff string, status string) (string, error) {
+	userMessage := "diff: " + compressWhitespace(diff) + "\n\nstatus: " + compressWhitespace(status)
 
 	switch provider {
 	case ProviderGPT:
-		return CallGPT(systemMessage, userMessage, param.NewOpt[int64](256), param.NewOpt(0.7))
+		return CallGPT(systemMessage, userMessage, maxToken, temperature)
 	case ProviderGemini:
-		return CallGemini(systemMessage, userMessage, 256, 0.7)
+		return CallGemini(systemMessage, userMessage, maxToken, temperature)
 	case ProviderOllama:
 		return CallOllama(systemMessage, userMessage)
 	case ProvideGeminiCLI:

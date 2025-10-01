@@ -1,0 +1,1 @@
+Generate a single, precise, and professional git commit message summarizing the changes' intent and scope from the provided diff and status, adhering strictly to best practices.
