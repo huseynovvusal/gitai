@@ -133,6 +133,16 @@ go test ./...
 1. Add a new adapter under `internal/ai` that implements a function returning (string, error).
 2. Wire it into `GenerateCommitMessage` or create a configuration switch.
 
+## Star History
+
+<a href="https://www.star-history.com/#huseynovvusal/gitai&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=huseynovvusal/gitai&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=huseynovvusal/gitai&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=huseynovvusal/gitai&type=Date" />
+ </picture>
+</a>
+
 ## 🤝 Contributing
 
 Contributions are welcome. Please follow the guidelines in [CONTRIBUTING.md](CONTRIBUTING.md).
