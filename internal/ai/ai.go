@@ -7,7 +7,6 @@ import (
 	"github.com/yubiquita/gemini-cli-wrapper"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
 
@@ -166,20 +165,23 @@ func ParseProvider(s string) (Provider, error) {
 	}
 }
 
-var whitespaceRegex = regexp.MustCompile(`\s+`)
+var callGPT = CallGPT
+var callGemini = CallGemini
+var callOllama = CallOllama
+var callGeminiCLI = CallGeminiCLI
 
 func GenerateCommitMessage(provider Provider, diff string, status string) (string, error) {
-	userMessage := "diff: " + compressWhitespace(diff) + "\n\nstatus: " + compressWhitespace(status)
+	userMessage := "diff: " + diff + "\n\nstatus: " + status
 
 	switch provider {
 	case ProviderGPT:
-		return CallGPT(systemMessage, userMessage, maxToken, temperature)
+		return callGPT(systemMessage, userMessage, maxToken, temperature)
 	case ProviderGemini:
-		return CallGemini(systemMessage, userMessage, maxToken, temperature)
+		return callGemini(systemMessage, userMessage, maxToken, temperature)
 	case ProviderOllama:
-		return CallOllama(systemMessage, userMessage)
+		return callOllama(systemMessage, userMessage)
 	case ProvideGeminiCLI:
-		return CallGeminiCLI(systemMessage, userMessage)
+		return callGeminiCLI(systemMessage, userMessage)
 
 	default:
 		return "", fmt.Errorf("invalid AI provider: %s", provider)

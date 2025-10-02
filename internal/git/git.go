@@ -75,7 +75,12 @@ func GetChangesForFiles(files []string) (string, error) {
 		return "", nil
 	}
 
-	args := append([]string{"diff", "--"}, clean...)
+	args := append([]string{
+		"diff",
+		"-U0",
+		"--minimal",
+		"--",
+	}, clean...)
 
 	out, err := exec.Command("git", args...).Output()
 
