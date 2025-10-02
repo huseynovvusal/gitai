@@ -1,0 +1,122 @@
+diff: diff --git a/go.mod b/go.mod
+index dde1b39..273ca32 100644
+--- a/go.mod
++++ b/go.mod
+@@ -9,0 +10 @@ require (
++	github.com/pkoukk/tiktoken-go v0.1.8
+@@ -10,0 +12 @@ require (
++	github.com/yubiquita/gemini-cli-wrapper v0.3.0
+@@ -22,0 +25 @@ require (
++	github.com/dlclark/regexp2 v1.10.0 // indirect
+@@ -26,0 +30 @@ require (
++	github.com/google/uuid v1.6.0 // indirect
+@@ -44 +47,0 @@ require (
+-	github.com/yubiquita/gemini-cli-wrapper v0.3.0 // indirect
+diff --git a/go.sum b/go.sum
+index 23a2901..5e6fd7d 100644
+--- a/go.sum
++++ b/go.sum
+@@ -29,0 +30 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
++github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+@@ -30,0 +32,2 @@ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
++github.com/dlclark/regexp2 v1.10.0 h1:+/GIL799phkJqYW+3YbOd8LCcbHzT0Pbo8zl70MHsq0=
++github.com/dlclark/regexp2 v1.10.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
+@@ -61,0 +65,2 @@ github.com/google/uuid v1.1.2/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+
++github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
++github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+@@ -83,0 +89,3 @@ github.com/openai/openai-go/v2 v2.7.0/go.mod h1:jrJs23apqJKKbT+pqtFgNKpRju/KP9zp
++github.com/pkoukk/tiktoken-go v0.1.8 h1:85ENo+3FpWgAACBaEUVp+lctuTcYUO7BtmfhlN/QTRo=
++github.com/pkoukk/tiktoken-go v0.1.8/go.mod h1:9NiV+i9mJKGj1rYOT+njbv+ZwA/zJxYdewGl6qVatpg=
++github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+@@ -99,0 +108,2 @@ github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o
++github.com/stretchr/testify v1.8.2 h1:+h33VjcLVPDHtOdpUCuF+7gSuG3yGIftsP1YvFihtJ8=
++github.com/stretchr/testify v1.8.2/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
+@@ -186,0 +197 @@ gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C
++gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
+diff --git a/internal/ai/ai.go b/internal/ai/ai.go
+index 33afb6f..390d494 100644
+--- a/internal/ai/ai.go
++++ b/internal/ai/ai.go
+@@ -7,0 +8 @@ import (
++	"io/ioutil"
+@@ -10 +10,0 @@ import (
+-	"regexp"
+@@ -169 +169,4 @@ func ParseProvider(s string) (Provider, error) {
+-var whitespaceRegex = regexp.MustCompile(`\s+`)
++var callGPT = CallGPT
++var callGemini = CallGemini
++var callOllama = CallOllama
++var callGeminiCLI = CallGeminiCLI
+@@ -172 +175,2 @@ func GenerateCommitMessage(provider Provider, diff string, status string) (strin
+-	userMessage := "diff: " + compressWhitespace(diff) + "\n\nstatus: " + compressWhitespace(status)
++	userMessage := "diff: " + diff + "\n\nstatus: " + status
++	ioutil.WriteFile("userMessage", []byte(userMessage), 0755)
+@@ -176 +180 @@ func GenerateCommitMessage(provider Provider, diff string, status string) (strin
+-		return CallGPT(systemMessage, userMessage, maxToken, temperature)
++		return callGPT(systemMessage, userMessage, maxToken, temperature)
+@@ -178 +182 @@ func GenerateCommitMessage(provider Provider, diff string, status string) (strin
+-		return CallGemini(systemMessage, userMessage, maxToken, temperature)
++		return callGemini(systemMessage, userMessage, maxToken, temperature)
+@@ -180 +184 @@ func GenerateCommitMessage(provider Provider, diff string, status string) (strin
+-		return CallOllama(systemMessage, userMessage)
++		return callOllama(systemMessage, userMessage)
+@@ -182 +186 @@ func GenerateCommitMessage(provider Provider, diff string, status string) (strin
+-		return CallGeminiCLI(systemMessage, userMessage)
++		return callGeminiCLI(systemMessage, userMessage)
+diff --git a/internal/ai/prompt.go b/internal/ai/prompt.go
+index 232acc3..c7751b7 100644
+--- a/internal/ai/prompt.go
++++ b/internal/ai/prompt.go
+@@ -4,0 +5 @@ import (
++	"regexp"
+@@ -10,0 +12,2 @@ var systemMessage string
++var whitespaceRegex = regexp.MustCompile(`\s+`)
++
+@@ -14 +16,0 @@ func compressWhitespace(input string) string {
+-	// 1. Replace all sequences of whitespace with a single space.
+@@ -16,2 +17,0 @@ func compressWhitespace(input string) string {
+-
+-	// 2. Remove any leading or trailing spaces.
+@@ -19,0 +20,7 @@ func compressWhitespace(input string) string {
++
++// CompressWhitespace is an exported wrapper for compressWhitespace to allow
++// other packages (e.g., CLI commands) to reuse the same normalization logic
++// when preparing prompts or measuring token usage.
++func CompressWhitespace(input string) string {
++	return compressWhitespace(input)
++}
+diff --git a/internal/git/git.go b/internal/git/git.go
+index 6a26fb2..a8594cc 100644
+--- a/internal/git/git.go
++++ b/internal/git/git.go
+@@ -3,0 +4 @@ import (
++	"fmt"
+@@ -78 +79,7 @@ func GetChangesForFiles(files []string) (string, error) {
+-	args := append([]string{"diff", "--"}, clean...)
++	args := append([]string{
++		"diff",
++		"-U0",
++		"--minimal",
++		"--",
++	}, clean...)
+
+
+status: On branch prompt_compress
+Your branch is up to date with 'origin/prompt_compress'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   go.mod
+	modified:   go.sum
+	modified:   internal/ai/ai.go
+	modified:   internal/ai/prompt.go
+	modified:   internal/git/git.go
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	cmd/tokens.go
+	internal/ai/ai_test.go
+	internal/ai/userMessage
+
+no changes added to commit (use "git add" and/or "git commit -a")
