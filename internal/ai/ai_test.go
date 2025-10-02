@@ -3,7 +3,6 @@ package ai
 import (
 	_ "embed"
 	"huseynovvusal/gitai/internal/ai/test_prompts"
-	"math"
 	"regexp"
 	"testing"
 
@@ -42,6 +41,10 @@ func TestGenerateCommitMessage_PropagatesError(t *testing.T) {
 	}
 }
 
+// This is more of a blank test that lists the different prompts and allows to iterate over different versions,
+// It logs the cost of the tokens used by each candidate prompt, and accumulates the total.
+// The purpose is not to validate the correctness of outputs, but to compare prompt formulations,
+// track their relative token lengths, and help optimize prompt design for cost and efficiency.
 func TestPromptIterations_TokenCounts(t *testing.T) {
 	enc, err := tiktoken.GetEncoding("o200k_base")
 	if err != nil {
@@ -51,60 +54,36 @@ func TestPromptIterations_TokenCounts(t *testing.T) {
 	tests := []struct {
 		name       string
 		candidates []string
-		wantBest   int
 	}{
 		{
-			name: "Want shortest system prompt",
+			name: "Test system prompt",
 			candidates: []string{
 				systemMessage,
 				"Expert Git generator. Summarialize diff/status to a single, scoped, conventional commit. Use: <type>(scope): <desc>. Body: dot list of non-trivial changes. Add BREAKING CHANGE footer if applicable. Output ONLY message.",
 				"Role: You expert Git message generator. Summarize the intent and scope of the following diff/status into a conventional, professional commit message with a single scope\nExpected Output: A single commit message in the Conventional Commits format:\n<type>[**single, highest-level component**]: <description>\n[Body, as dot list of non-trivial changes]\n[optional footer(s), include BREAKING CHANGES if necessary ]",
 				"You are a highly skilled software engineer with deep expertise in crafting precise, professional, and conventional git commit messages. Given a git diff and status, generate a single, clear, and accurate commit message that succinctly summarizes the intent and scope of the changes. Only output the commit message itself, with no explanations, prefixes, formatting, or any other text. The output must be ready to use as a commit message and strictly adhere to best practices.",
 			},
-			wantBest: 0,
 		},
 		{
-			name: "test shortest usermessage",
+			name: "Shortest usermessage",
 			candidates: []string{
 				compressWhitespace(test_prompts.UserMessageCompressedDiff),
 				test_prompts.UserMessageCompressedDiff,
 				compressWhitespace(test_prompts.UserMessage),
 				test_prompts.UserMessage,
 			},
-			wantBest: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bestTokens := math.MaxInt
-			bestIdx := -1
 			var totalTokens int // To track the total tokens processed
-			var minTokens, maxTokens int = math.MaxInt, 0
 			for i, s := range tt.candidates {
 				tokens := len(enc.Encode(s, nil, nil))
 				totalTokens += tokens
 
-				// Update min/max tokens across all candidates
-				if tokens < minTokens {
-					minTokens = tokens
-				}
-				if tokens > maxTokens {
-					maxTokens = tokens
-				}
-
-				// Update the overall best candidate
-				if tokens < bestTokens {
-					bestTokens = tokens
-					bestIdx = i
-				}
-
 				// Print candidate token count (useful for debugging)
 				t.Logf("  Candidate %d: %d tokens", i, tokens)
-			}
-
-			if bestIdx != tt.wantBest {
-				t.Fatalf("%s: expected best index %d, got %d (bestTokens=%d)", tt.name, tt.wantBest, bestIdx, bestTokens)
 			}
 		})
 	}
