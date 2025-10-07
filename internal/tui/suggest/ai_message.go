@@ -55,9 +55,8 @@ type AIMessageModel struct {
 	errMsg        string
 	cancel        bool
 	provider      ai.Provider
-	// savedDiff and savedStatus hold context when a security warning pauses generation
-	savedDiff   string
-	savedStatus string
+	savedDiff     string
+	savedStatus   string
 }
 
 func NewAIMessageModel(files []string, provider ai.Provider) AIMessageModel {
@@ -77,7 +76,6 @@ func NewAIMessageModel(files []string, provider ai.Provider) AIMessageModel {
 }
 
 func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
-
 	return func() tea.Msg {
 		diff, err := git.GetChangesForFiles(files)
 		if err != nil {
@@ -147,7 +145,6 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "y", "enter":
 			if m.state == StateSecurityWarning {
-				// user confirmed; resume generation using saved context
 				m.state = StateGenerating
 				m.errMsg = ""
 				return m, runGenerateAfterWarningAsync(m.provider, m.savedDiff, m.savedStatus)
