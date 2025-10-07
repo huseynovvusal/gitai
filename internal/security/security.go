@@ -34,6 +34,34 @@ var SensitiveKeywords = []string{
 	"encryption_key",
 }
 
+// BuildKeywordsCSV can be set at build time via -ldflags to overwrite defaults.
+// Example:
+// go build -ldflags "-X 'huseynovvusal/gitai/internal/security.BuildKeywordsCSV=my_secret,api_key'" ./...
+var BuildKeywordsCSV string
+
+func init() {
+	if v, ok := os.LookupEnv("GITAI_SENSITIVE_KEYWORDS"); ok && strings.TrimSpace(v) != "" {
+		SensitiveKeywords = parseKeywordsCSV(v)
+		return
+	}
+
+	if strings.TrimSpace(BuildKeywordsCSV) != "" {
+		SensitiveKeywords = parseKeywordsCSV(BuildKeywordsCSV)
+	}
+}
+
+func parseKeywordsCSV(csv string) []string {
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func CheckDiffSafety(diffText string) error {
 	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
 	if err != nil {
