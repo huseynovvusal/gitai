@@ -2,7 +2,9 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/yubiquita/gemini-cli-wrapper"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,7 +16,10 @@ import (
 	"google.golang.org/genai"
 )
 
-func CallGPT(systemMessage string, userMessage string, maxTokens param.Opt[int64], temperature param.Opt[float64]) (string, error) {
+const temperature = 0.7
+const maxToken = 256
+
+func CallGPT(systemMessage string, userMessage string, maxTokens int64, temperature float64) (string, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 
 	if apiKey == "" {
@@ -29,8 +34,8 @@ func CallGPT(systemMessage string, userMessage string, maxTokens param.Opt[int64
 			openai.SystemMessage(systemMessage),
 			openai.UserMessage(userMessage),
 		},
-		MaxTokens:   maxTokens,
-		Temperature: temperature,
+		MaxTokens:   param.NewOpt(maxTokens),
+		Temperature: param.NewOpt(temperature),
 	})
 
 	if err != nil {
@@ -98,7 +103,7 @@ func CallOllama(systemMessage string, userMessage string) (string, error) {
 
 	out, err := cmd.CombinedOutput()
 
-	if ctx.Err() == context.DeadlineExceeded {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return "", fmt.Errorf("ollama command timed out")
 	}
 
@@ -110,18 +115,32 @@ func CallOllama(systemMessage string, userMessage string) (string, error) {
 
 }
 
+func CallGeminiCLI(systemMessage, userMessage string) (string, error) {
+	prompt := fmt.Sprintf("System: %s\nUser: %s", systemMessage, userMessage)
+
+	client := geminicli.NewClient()
+
+	resp, err := client.Execute(prompt)
+	if err != nil {
+		return "", err
+	}
+
+	return resp, nil
+}
+
 type Provider string
 
 const (
-	ProviderGPT    Provider = "gpt"
-	ProviderGemini Provider = "gemini"
-	ProviderOllama Provider = "ollama"
-	ProviderNone   Provider = ""
+	ProviderGPT      Provider = "gpt"
+	ProviderGemini   Provider = "gemini"
+	ProviderOllama   Provider = "ollama"
+	ProvideGeminiCLI Provider = "geminicli"
+	ProviderNone     Provider = ""
 )
 
 func (p Provider) IsValid() bool {
 	switch p {
-	case ProviderGPT, ProviderGemini, ProviderOllama, ProviderNone:
+	case ProviderGPT, ProviderGemini, ProviderOllama, ProviderNone, ProvideGeminiCLI:
 		return true
 	default:
 		return false
@@ -135,6 +154,8 @@ func ParseProvider(s string) (Provider, error) {
 		return ProviderGPT, nil
 	case "gemini", "google":
 		return ProviderGemini, nil
+	case "geminicli", "gemini_cli", "gemini_wrapper", "gemini-cli", "gemini-wrapper":
+		return ProvideGeminiCLI, nil
 	case "ollama", "local":
 		return ProviderOllama, nil
 	case "", "none":
@@ -144,19 +165,24 @@ func ParseProvider(s string) (Provider, error) {
 	}
 }
 
-func GenerateCommitMessage(provider Provider, diff string, status string) (string, error) {
-	systemMessage := "You are a highly skilled software engineer with deep expertise in crafting precise, professional, and conventional git commit messages. Given a git diff and status, generate a single, clear, and accurate commit message that succinctly summarizes the intent and scope of the changes. Only output the commit message itself, with no explanations, prefixes, formatting, or any other text. The output must be ready to use as a commit message and strictly adhere to best practices."
+var callGPT = CallGPT
+var callGemini = CallGemini
+var callOllama = CallOllama
+var callGeminiCLI = CallGeminiCLI
 
-	// TODO: Remove whitespaces from diff and status to save tokens
+func GenerateCommitMessage(provider Provider, diff string, status string) (string, error) {
 	userMessage := "diff: " + diff + "\n\nstatus: " + status
 
 	switch provider {
 	case ProviderGPT:
-		return CallGPT(systemMessage, userMessage, param.NewOpt[int64](256), param.NewOpt(0.7))
+		return callGPT(systemMessage, userMessage, maxToken, temperature)
 	case ProviderGemini:
-		return CallGemini(systemMessage, userMessage, 256, 0.7)
+		return callGemini(systemMessage, userMessage, maxToken, temperature)
 	case ProviderOllama:
-		return CallOllama(systemMessage, userMessage)
+		return callOllama(systemMessage, userMessage)
+	case ProvideGeminiCLI:
+		return callGeminiCLI(systemMessage, userMessage)
+
 	default:
 		return "", fmt.Errorf("invalid AI provider: %s", provider)
 	}
