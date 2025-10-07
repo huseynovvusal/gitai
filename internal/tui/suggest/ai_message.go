@@ -145,14 +145,14 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "x":
 			m.cancel = true
 			return m, tea.Quit
-		case "y", "Y", "yes", "YES":
+		case "y", "enter":
 			if m.state == StateSecurityWarning {
 				// user confirmed; resume generation using saved context
 				m.state = StateGenerating
 				m.errMsg = ""
 				return m, runGenerateAfterWarningAsync(m.provider, m.savedDiff, m.savedStatus)
 			}
-		case "n", "N", "no", "NO":
+		case "n":
 			if m.state == StateSecurityWarning {
 				m.state = StateError
 				m.errMsg = "Commit cancelled by user due to security findings"

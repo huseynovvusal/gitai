@@ -34,10 +34,10 @@ var SensitiveKeywords = []string{
 	"encryption_key",
 }
 
-var secret = "test123"
+var api_key = "test123"
 
 func CheckDiffSafety(diffText string) error {
-	fmt.Println(secret)
+	fmt.Println(api_key)
 	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
 	if err != nil {
 		return err
