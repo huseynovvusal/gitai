@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,10 +34,10 @@ var SensitiveKeywords = []string{
 	"encryption_key",
 }
 
-var password = "test123"
+var secret = "test123"
 
 func CheckDiffSafety(diffText string) error {
-	fmt.Println(password)
+	fmt.Println(secret)
 	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
 	if err != nil {
 		return err
@@ -83,14 +84,16 @@ func CheckDiffSafety(diffText string) error {
 	}
 
 	var b strings.Builder
-	b.WriteString("Potential sensitive data detected in added lines:\n")
 	cwd, _ := os.Getwd()
 	for _, f := range findings {
 		abs := f.File
 		if !filepath.IsAbs(abs) {
 			abs = filepath.Join(cwd, abs)
 		}
-		b.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", abs, f.Line, f.Text))
+		// create file:// URI with encoded path so terminals like VS Code treat it as a clickable link
+		u := url.URL{Scheme: "file", Path: abs}
+		fileURI := u.String()
+		b.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", fileURI, f.Line, f.Text))
 	}
 
 	return fmt.Errorf("%s", b.String())
