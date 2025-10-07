@@ -11,9 +11,9 @@ var suggestCmd = &cobra.Command{
 	Use:   "suggest",
 	Short: "Suggest commit messages for changed files using AI",
 	Run: func(cmd *cobra.Command, args []string) {
-		providerType, _ := cmd.Flags().GetString("provider")
+		// providerType, _ := cmd.Flags().GetString("provider")
 
-		provider, err := ai.ParseProvider(providerType)
+		provider, err := ai.ParseProvider("gpt")
 		if err != nil {
 			cmd.PrintErrln("Error parsing provider:", err)
 			return

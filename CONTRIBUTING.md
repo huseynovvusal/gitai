@@ -10,7 +10,7 @@ We’re excited to build a better AI-powered git experience together.
 ### 1. Fork & Clone
 
 ```sh
-git clone https://github.com/yourusername/gitai.git
+git clone https://github.com/huseynovvusal/gitai.git
 cd gitai
 ```
 
