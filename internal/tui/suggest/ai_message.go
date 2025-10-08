@@ -8,6 +8,7 @@ import (
 
 	"huseynovvusal/gitai/internal/ai"
 	"huseynovvusal/gitai/internal/git"
+	"huseynovvusal/gitai/internal/security"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
 
@@ -27,16 +28,23 @@ type pushResultMsg struct {
 	err error
 }
 
+type commitSecurityWarningMsg struct {
+	err    error
+	diff   string
+	status string
+}
+
 type State int
 
 const (
-	StateGenerating State = iota // waiting for AI generation
-	StateGenerated               // AI generated, ready to commit / edit
-	StateCommitting              // commit running
-	StateCommitted               // commit succeeded; show commit message and push/cancel options
-	StatePushing                 // push running
-	StatePushed                  // push succeeded; show success and exit option
-	StateError                   // show error (store message)
+	StateGenerating      State = iota // waiting for AI generation
+	StateGenerated                    // AI generated, ready to commit / edit
+	StateCommitting                   // commit running
+	StateCommitted                    // commit succeeded; show commit message and push/cancel options
+	StatePushing                      // push running
+	StatePushed                       // push succeeded; show success and exit option
+	StateError                        // show error (store message)
+	StateSecurityWarning              // warn and prompt the user for confirmation regarding safety reasons of the code being committed
 )
 
 type AIMessageModel struct {
@@ -47,6 +55,8 @@ type AIMessageModel struct {
 	errMsg        string
 	cancel        bool
 	provider      ai.Provider
+	savedDiff     string
+	savedStatus   string
 }
 
 func NewAIMessageModel(files []string, provider ai.Provider) AIMessageModel {
@@ -68,7 +78,6 @@ func NewAIMessageModel(files []string, provider ai.Provider) AIMessageModel {
 func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
 	return func() tea.Msg {
 		diff, err := git.GetChangesForFiles(files)
-
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -78,11 +87,28 @@ func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
 			return aiErrorMsg{err: err}
 		}
 
+		err = security.CheckDiffSafety(diff)
+		if err != nil {
+			return commitSecurityWarningMsg{err: err, diff: diff, status: status}
+		}
+
 		commitMessage, err := ai.GenerateCommitMessage(provider, diff, status)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
+		return aiDoneMsg{message: commitMessage}
+	}
+}
+
+// runGenerateAfterWarningAsync resumes commit message generation using the
+// previously saved diff/status after the user confirmed the warning.
+func runGenerateAfterWarningAsync(provider ai.Provider, diff, status string) tea.Cmd {
+	return func() tea.Msg {
+		commitMessage, err := ai.GenerateCommitMessage(provider, diff, status)
+		if err != nil {
+			return aiErrorMsg{err: err}
+		}
 		return aiDoneMsg{message: commitMessage}
 	}
 }
@@ -114,10 +140,21 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "e":
-			// TODO: Open editor to edit the commit message
-		case "r":
-			// TODO: Regenerate the commit message
+		case "x":
+			m.cancel = true
+			return m, tea.Quit
+		case "y", "enter":
+			if m.state == StateSecurityWarning {
+				m.state = StateGenerating
+				m.errMsg = ""
+				return m, runGenerateAfterWarningAsync(m.provider, m.savedDiff, m.savedStatus)
+			}
+		case "n":
+			if m.state == StateSecurityWarning {
+				m.state = StateError
+				m.errMsg = "Commit cancelled by user due to security findings"
+				return m, nil
+			}
 		case "c":
 			if m.state == StateGenerated && m.commitMessage != "" {
 				m.state = StateCommitting
@@ -132,9 +169,6 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errMsg = ""
 				return m, tea.Batch(m.spinner.Tick, runPushAsync())
 			}
-		case "x":
-			m.cancel = true
-			return m, tea.Quit
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -172,6 +206,15 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = StatePushed
 		m.errMsg = ""
 		return m, tea.Quit
+	case commitSecurityWarningMsg:
+		if msg.err != nil {
+			// save context so we can resume generation if the user confirms
+			m.savedDiff = msg.diff
+			m.savedStatus = msg.status
+			m.state = StateSecurityWarning
+			m.errMsg = msg.err.Error()
+			return m, nil
+		}
 	}
 
 	return m, nil
@@ -225,7 +268,14 @@ func (m *AIMessageModel) View() string {
 		// b.WriteString("\n[e] Edit   [r] Regenerate   [c] Commit   [x] Cancel\n")
 		b.WriteString("\n[c] Commit   [x] Cancel\n")
 		return b.String()
-
+	case StateSecurityWarning:
+		var b strings.Builder
+		header := shared.HeaderStyle.Render("Warning, potential sensitive data detected in added lines:")
+		b.WriteString("\n" + header + "\n")
+		b.WriteString(m.errMsg + "\n")
+		b.WriteString("\nDo you wish to continue?\n")
+		b.WriteString("\n[Y] yes   [n] no\n")
+		return b.String()
 	default:
 		// fallback - shouldn't happen
 		return "\n" + shared.HeaderStyle.Render("Unknown state") + "\n"

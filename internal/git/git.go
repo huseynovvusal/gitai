@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -101,5 +102,24 @@ func Commit(files []string, message string) error {
 
 // Push pushes the current branch to the remote repository.
 func Push() error {
-	return exec.Command("git", "push").Run()
+	out, err := exec.Command("git", "push").CombinedOutput()
+	if err == nil {
+		return nil
+	}
+
+	branchOut, berr := exec.Command("git", "branch", "--show-current").CombinedOutput()
+	if berr != nil {
+		return fmt.Errorf("git push failed: %s; additionally failed to get current branch: %v", string(out), berr)
+	}
+	branch := strings.TrimSpace(string(branchOut))
+	if branch == "" {
+		return fmt.Errorf("git push failed: %s; current branch unknown", string(out))
+	}
+
+	out2, err2 := exec.Command("git", "push", "--set-upstream", "origin", branch).CombinedOutput()
+	if err2 != nil {
+		return fmt.Errorf("git push failed: %s; push --set-upstream origin %s failed: %s", string(out), branch, string(out2))
+	}
+
+	return nil
 }

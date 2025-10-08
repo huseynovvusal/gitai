@@ -24,7 +24,7 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
   - OpenAI API key (OPENAI_API_KEY)
   - Google API key for genai (GOOGLE_API_KEY)
   - Ollama binary available and OLLAMA_API_PATH set (for local models)
-  - Gemini cli installed 
+  - Gemini cli installed
 
 ### 📦 Build and install
 
@@ -40,6 +40,8 @@ make build
 
 ```sh
 make install
+# or if you want to personalize the keywords for the safety check of your diff
+make install-personalized-keys "comma,separated,keys"
 ```
 
 The `make install` target builds the `gitai` binary and moves it to `/usr/local/bin/` (may prompt for sudo). Alternatively copy `./bin/gitai` to a directory in your PATH.
@@ -67,7 +69,7 @@ gitai suggest --provider=gpt
 gitai suggest --provider=gemini
 
 
-# use Gemini cli 
+# use Gemini cli
 gitai suggest --provider=gemini_cli
 ```
 
