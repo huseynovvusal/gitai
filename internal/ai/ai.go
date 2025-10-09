@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/yubiquita/gemini-cli-wrapper"
+	"huseynovvusal/gitai/internal/config"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	geminicli "github.com/yubiquita/gemini-cli-wrapper"
 
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
@@ -20,7 +22,11 @@ const temperature = 0.7
 const maxToken = 256
 
 func CallGPT(systemMessage string, userMessage string, maxTokens int64, temperature float64) (string, error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	config, err := config.LoadConfig("gitai.yaml")
+	if err != nil {
+		return "", err
+	}
+	apiKey := config.AI.APIKey
 
 	if apiKey == "" {
 		return "", ErrAPIKeyNotSet
