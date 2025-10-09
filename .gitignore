@@ -46,3 +46,6 @@ bin/
 build/
 dist/
 release/
+
+# Gitai specific
+gitai.yaml
