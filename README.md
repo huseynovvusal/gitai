@@ -83,19 +83,28 @@ See `internal/tui/suggest` for the implementation of the flow.
 
 ## 🔧 Configuration
 
-**API keys and settings are provided via environment variables:**
+**Configuration is now centralized in `gitai.yaml`:**
 
-- `OPENAI_API_KEY` — API key for OpenAI (for GPT-3.5/4 series)
-- `GOOGLE_API_KEY` — API key used by Google GenAI client
-- `OLLAMA_API_PATH` — path to the Ollama binary for local model calls (e.g. `/usr/local/bin/ollama`)
+- AI provider and API key settings are managed via the `gitai.yaml` file in the project root.
+- Example config:
 
-_Set these in your shell or CI environment._ Example:
-
-```sh
-export OPENAI_API_KEY="sk-..."
-export GOOGLE_API_KEY="..."
-export OLLAMA_API_PATH="/usr/local/bin/ollama"
+```yaml
+ai:
+  provider: "gpt" # Options: gpt, gemini, ollama, gemini_cli
+  api_key: "sk-..." # Your API key for the selected provider
 ```
+
+For local models (Ollama), set the path in `gitai.yaml`:
+
+```yaml
+ai:
+  provider: "ollama"
+  ollama_path: "/usr/local/bin/ollama"
+```
+
+You can still override some settings with environment variables if needed (e.g., for CI), but the recommended approach is to use the YAML config for all persistent settings.
+
+See `gitai.yaml` for the current configuration format and options.
 
 ## ⚙️ Behaviour and defaults
 
