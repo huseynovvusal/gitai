@@ -144,7 +144,8 @@ func Commit(files []string, message string) error {
 
 	// Then, commit *only* those files, leaving other staged files alone.
 	// Note: We don't use -a here. We commit what we just added.
-	commitArgs := append([]string{"commit", "-m", message})
+	commitArgs := append([]string{"commit", "-m", message, "--"})
+	commitArgs = append(commitArgs, files...)
 	if out, err := exec.Command("git", commitArgs...).CombinedOutput(); err != nil {
 		// Check if the error is "nothing to commit" and if so, return nil.
 		// This can happen if the files added had no actual changes.
