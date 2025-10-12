@@ -113,7 +113,8 @@ Config files
   1) /etc/gitai/
   2) $HOME/.config/gitai/
   3) $HOME/.gitai/
-  4) Current working directory (.)
+  4) Current Git root directory 
+  5) Current working directory (.)
 
 Example gitai.yaml
 ```yaml

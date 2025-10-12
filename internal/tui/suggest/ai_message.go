@@ -85,7 +85,7 @@ func runAIAsync(ctx context.Context, provider ai.Provider, files []string) tea.C
 			return aiErrorMsg{err: err}
 		}
 
-		status, err := git.GetStatus()
+		status, err := git.GetStatusForFiles(files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
