@@ -1,6 +1,8 @@
 package git
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -15,34 +17,69 @@ func GetDiff() (string, error) {
 	return string(out), err
 }
 
-// GetStatus returns the output of `git status`.
+// GetStatus returns the output of `git status --porcelain`.
 func GetStatus() (string, error) {
-	cmd := exec.Command("git", "status")
-
+	cmd := exec.Command("git", "status", "--porcelain")
 	out, err := cmd.CombinedOutput()
-
 	return string(out), err
 }
 
-// CommitChanges creates a git commit with the provided message.
-func CommitChanges(message string) error {
-	cmd := exec.Command("git", "commit", "-am", message)
+// GetStatusForFiles returns the `git status --porcelain` output, but only for
+// the files specified in the input list.
+func GetStatusForFiles(files []string) (string, error) {
+	// If the input list is empty, there's nothing to do.
+	if len(files) == 0 {
+		return "", nil
+	}
 
-	_, err := cmd.CombinedOutput()
+	// Create a set (using a map) for efficient O(1) lookups.
+	// This lets us quickly check if a file is one we care about.
+	filesToInclude := make(map[string]struct{})
+	for _, f := range files {
+		filesToInclude[f] = struct{}{}
+	}
 
-	return err
+	// Get the status for the entire repository.
+	cmd := exec.Command("git", "status", "--porcelain")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to run git status: %w", err)
+	}
+
+	var relevantLines []string
+	allLines := strings.Split(string(out), "\n")
+
+	// Iterate over each line of the status output and filter it.
+	for _, line := range allLines {
+		if len(line) < 4 {
+			continue // Skip empty or malformed lines
+		}
+
+		// The porcelain format is "XY filepath", so the path starts at index 3.
+		filePath := strings.TrimSpace(line[3:])
+
+		// A special case is a renamed file, e.g., "R  new-name -> old-name"
+		if strings.Contains(filePath, " -> ") {
+			parts := strings.Split(filePath, " -> ")
+			newName := parts[0]
+			oldName := parts[1]
+			// Include the line if either the old or new name is in our list.
+			if filesToInclude[newName] == struct{}{} || filesToInclude[oldName] == struct{}{} {
+				relevantLines = append(relevantLines, line)
+			}
+		} else {
+			// For all other cases, just check if the file path is in our set.
+			if filesToInclude[filePath] == struct{}{} {
+				relevantLines = append(relevantLines, line)
+			}
+		}
+	}
+
+	// Join the filtered lines back into a single string.
+	return strings.Join(relevantLines, "\n"), nil
 }
 
-// AddChanges stages all changes in the working directory.
-func AddChanges() error {
-	cmd := exec.Command("git", "add", ".")
-
-	_, err := cmd.CombinedOutput()
-
-	return err
-}
-
-// GetChangedFiles returns a list of changed files using `git status --porcelain`.
+// GetChangedFiles returns a list of changed (modified, new, etc.) files.
 func GetChangedFiles() ([]string, error) {
 	out, err := exec.Command("git", "status", "--porcelain").Output()
 	if err != nil {
@@ -51,6 +88,7 @@ func GetChangedFiles() ([]string, error) {
 	lines := strings.Split(string(out), "\n")
 	var files []string
 	for _, line := range lines {
+		// Ensure the line is long enough and extract the file path
 		if len(line) > 3 {
 			files = append(files, strings.TrimSpace(line[3:]))
 		}
@@ -58,68 +96,75 @@ func GetChangedFiles() ([]string, error) {
 	return files, nil
 }
 
-// GetChangesForFiles returns the git diff for the specified files.
+// GetChangesForFiles returns the git diff for only the specified files.
+// GetChangesForFiles returns the git diff for the specified files against HEAD.
+// This shows all staged and unstaged changes for only those files.
 func GetChangesForFiles(files []string) (string, error) {
-	// Trim whitespace and remove empty entries to avoid calling
-	// `git diff --` with no paths (which returns the full diff).
 	var clean []string
 	for _, f := range files {
 		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
+		if f != "" {
+			clean = append(clean, f)
 		}
-		clean = append(clean, f)
 	}
 
 	if len(clean) == 0 {
-		// No files specified — return empty diff instead of full repo diff.
 		return "", nil
 	}
 
-	args := append([]string{
-		"diff",
-		"-U0",
-		"--minimal",
-		"--",
-	}, clean...)
+	// Construct the arguments: git diff HEAD -- <file1> <file2>...
+	args := append([]string{"diff", "HEAD", "--"}, clean...)
 
-	out, err := exec.Command("git", args...).Output()
+	cmd := exec.Command("git", args...)
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
 
-	return string(out), err
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("git diff failed: %w\n%s", err, stderr.String())
+	}
+
+	return out.String(), nil
 }
 
-// Commit stages the selected files and creates a commit with the given message.
+// Commit stages and commits *only* the specified files with the given message.
+// This is the corrected and safe version of the commit logic.
 func Commit(files []string, message string) error {
-	args := append([]string{"add"}, files...)
-	if err := exec.Command("git", args...).Run(); err != nil {
-		return err
+	if len(files) == 0 {
+		return errors.New("no files provided to commit")
 	}
-	if err := exec.Command("git", "commit", "-m", message).Run(); err != nil {
-		return err
+
+	// First, stage the specific files
+	addArgs := append([]string{"add", "--"}, files...)
+	if out, err := exec.Command("git", addArgs...).CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to stage files: %w\n%s", err, string(out))
 	}
+
+	// Then, commit *only* those files, leaving other staged files alone.
+	// Note: We don't use -a here. We commit what we just added.
+	commitArgs := append([]string{"commit", "-m", message, "--"})
+	commitArgs = append(commitArgs, files...)
+	if out, err := exec.Command("git", commitArgs...).CombinedOutput(); err != nil {
+		// Check if the error is "nothing to commit" and if so, return nil.
+		// This can happen if the files added had no actual changes.
+		if strings.Contains(string(out), "nothing to commit") {
+			return nil
+		}
+		return fmt.Errorf("git commit failed: %w\n%s", err, string(out))
+	}
+
 	return nil
 }
 
 // Push pushes the current branch to the remote repository.
+// This simplified version returns Git's helpful error messages directly.
 func Push() error {
-	out, err := exec.Command("git", "push").CombinedOutput()
-	if err == nil {
-		return nil
+	cmd := exec.Command("git", "push")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git push failed: %s", string(out))
 	}
-
-	branchOut, berr := exec.Command("git", "branch", "--show-current").CombinedOutput()
-	if berr != nil {
-		return fmt.Errorf("git push failed: %s; additionally failed to get current branch: %v", string(out), berr)
-	}
-	branch := strings.TrimSpace(string(branchOut))
-	if branch == "" {
-		return fmt.Errorf("git push failed: %s; current branch unknown", string(out))
-	}
-
-	out2, err2 := exec.Command("git", "push", "--set-upstream", "origin", branch).CombinedOutput()
-	if err2 != nil {
-		return fmt.Errorf("git push failed: %s; push --set-upstream origin %s failed: %s", string(out), branch, string(out2))
-	}
-
 	return nil
 }
