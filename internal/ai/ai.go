@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"huseynovvusal/gitai/internal/config"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -15,26 +13,23 @@ import (
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
 	"github.com/openai/openai-go/v2/packages/param"
+	"github.com/spf13/viper"
 	"google.golang.org/genai"
 )
 
 const temperature = 0.7
 const maxToken = 256
 
-func CallGPT(systemMessage string, userMessage string, maxTokens int64, temperature float64) (string, error) {
-	config, err := config.LoadConfig("gitai.yaml")
-	if err != nil {
-		return "", err
-	}
-	apiKey := config.AI.APIKey
-
+func CallGPT(ctx context.Context, systemMessage string, userMessage string, maxTokens int64, temperature float64) (string, error) {
+	// Prefer Viper-loaded key (config file, env, flags). Allow legacy OPENAI_API_KEY as fallback.
+	apiKey := viper.GetString("ai.api_key")
 	if apiKey == "" {
 		return "", ErrAPIKeyNotSet
 	}
 
 	client := openai.NewClient(option.WithAPIKey(apiKey))
 
-	res, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
+	res, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: openai.ChatModelGPT3_5Turbo,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemMessage),
@@ -56,10 +51,13 @@ func CallGPT(systemMessage string, userMessage string, maxTokens int64, temperat
 
 }
 
-func CallGemini(systemMessage string, userMessage string, maxTokens int32, temperature float32) (string, error) {
-	apiKey := os.Getenv("GOOGLE_API_KEY")
+func CallGemini(ctx context.Context, systemMessage string, userMessage string, maxTokens int32, temperature float32) (string, error) {
+	apiKey := viper.GetString("ai.api_key")
+	if apiKey == "" {
+		return "", ErrAPIKeyNotSet
+	}
 
-	client, err := genai.NewClient(context.TODO(), &genai.ClientConfig{
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey: apiKey,
 	})
 	if err != nil {
@@ -76,7 +74,7 @@ func CallGemini(systemMessage string, userMessage string, maxTokens int32, tempe
 	}
 	modelConfig := genai.GenerateContentConfig{Temperature: &temperature, MaxOutputTokens: maxTokens}
 
-	result, err := client.Models.GenerateContent(context.TODO(), "gemini-2.0-flash", []*genai.Content{
+	result, err := client.Models.GenerateContent(ctx, "gemini-2.0-flash", []*genai.Content{
 		{
 			Parts: parts,
 		},
@@ -93,14 +91,14 @@ func CallGemini(systemMessage string, userMessage string, maxTokens int32, tempe
 
 }
 
-func CallOllama(systemMessage string, userMessage string) (string, error) {
-	apiPath := os.Getenv("OLLAMA_API_PATH")
+func CallOllama(ctx context.Context, systemMessage string, userMessage string) (string, error) {
+	apiPath := viper.GetString("ollama.path")
 
 	if apiPath == "" {
-		return "", fmt.Errorf("ollama binary not found in PATH")
+		return "", ErrOllamaPathMissing
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	prompt := strings.Join([]string{systemMessage, userMessage}, "\n\n")
@@ -176,16 +174,16 @@ var callGemini = CallGemini
 var callOllama = CallOllama
 var callGeminiCLI = CallGeminiCLI
 
-func GenerateCommitMessage(provider Provider, diff string, status string) (string, error) {
+func GenerateCommitMessage(ctx context.Context, provider Provider, diff string, status string) (string, error) {
 	userMessage := "diff: " + diff + "\n\nstatus: " + status
 
 	switch provider {
 	case ProviderGPT:
-		return callGPT(systemMessage, userMessage, maxToken, temperature)
+		return callGPT(ctx, systemMessage, userMessage, maxToken, temperature)
 	case ProviderGemini:
-		return callGemini(systemMessage, userMessage, maxToken, temperature)
+		return callGemini(ctx, systemMessage, userMessage, maxToken, temperature)
 	case ProviderOllama:
-		return callOllama(systemMessage, userMessage)
+		return callOllama(ctx, systemMessage, userMessage)
 	case ProvideGeminiCLI:
 		return callGeminiCLI(systemMessage, userMessage)
 

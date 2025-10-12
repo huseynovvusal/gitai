@@ -1,6 +1,7 @@
 package suggest
 
 import (
+	"context"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -57,9 +58,10 @@ type AIMessageModel struct {
 	provider      ai.Provider
 	savedDiff     string
 	savedStatus   string
+	ctx           context.Context
 }
 
-func NewAIMessageModel(files []string, provider ai.Provider) AIMessageModel {
+func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider) AIMessageModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
@@ -71,11 +73,12 @@ func NewAIMessageModel(files []string, provider ai.Provider) AIMessageModel {
 		spinner:       s,
 		errMsg:        "",
 		cancel:        false,
+		ctx:           ctx,
 		provider:      provider,
 	}
 }
 
-func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
+func runAIAsync(ctx context.Context, provider ai.Provider, files []string) tea.Cmd {
 	return func() tea.Msg {
 		diff, err := git.GetChangesForFiles(files)
 		if err != nil {
@@ -92,7 +95,7 @@ func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
 			return commitSecurityWarningMsg{err: err, diff: diff, status: status}
 		}
 
-		commitMessage, err := ai.GenerateCommitMessage(provider, diff, status)
+		commitMessage, err := ai.GenerateCommitMessage(ctx, provider, diff, status)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -103,9 +106,9 @@ func runAIAsync(provider ai.Provider, files []string) tea.Cmd {
 
 // runGenerateAfterWarningAsync resumes commit message generation using the
 // previously saved diff/status after the user confirmed the warning.
-func runGenerateAfterWarningAsync(provider ai.Provider, diff, status string) tea.Cmd {
+func runGenerateAfterWarningAsync(ctx context.Context, provider ai.Provider, diff, status string) tea.Cmd {
 	return func() tea.Msg {
-		commitMessage, err := ai.GenerateCommitMessage(provider, diff, status)
+		commitMessage, err := ai.GenerateCommitMessage(ctx, provider, diff, status)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -130,7 +133,7 @@ func runPushAsync() tea.Cmd {
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		runAIAsync(m.provider, m.files),
+		runAIAsync(m.ctx, m.provider, m.files),
 	)
 }
 
@@ -147,7 +150,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateSecurityWarning {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, runGenerateAfterWarningAsync(m.provider, m.savedDiff, m.savedStatus)
+				return m, runGenerateAfterWarningAsync(m.ctx, m.provider, m.savedDiff, m.savedStatus)
 			}
 		case "n":
 			if m.state == StateSecurityWarning {

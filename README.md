@@ -83,32 +83,75 @@ See `internal/tui/suggest` for the implementation of the flow.
 
 ## 🔧 Configuration
 
-**Configuration is now centralized in `gitai.yaml`:**
+Configuration is managed with Viper and can be provided from, in order of precedence (highest first):
 
-- AI provider and API key settings are managed via the `gitai.yaml` file in the project root.
-- Example config:
+1. CLI flags
+2. Environment variables
+3. Config files
+4. Built-in defaults
 
+You can mix and match; higher‑precedence sources override lower ones.
+
+Supported keys
+- ai.provider: Which backend to use. Options: gpt, gemini, ollama, geminicli
+  - Flag: --provider or -p
+  - Env: GITAI_AI_PROVIDER
+  - Config key: ai.provider
+- ai.api_key: API key for the chosen backend
+  - Flag: --api_key or -k
+  - Env: GITAI_AI_API_KEY or GITAI_API_KEY
+  - Provider fallbacks (legacy):
+    - OpenAI: OPENAI_API_KEY
+    - Gemini: GOOGLE_API_KEY
+- ollama.path: Path to the Ollama binary when provider=ollama
+  - Env: OLLAMA_API_PATH
+  - Config key: ollama.path
+
+Config files
+- Base name: gitai (no extension in code). Viper will load any supported format found (e.g., gitai.yaml, gitai.yml, gitai.json, etc.).
+- Search paths (in this order):
+  1) /etc/gitai/
+  2) $HOME/.config/gitai/
+  3) $HOME/.gitai/
+  4) Current working directory (.)
+
+Example gitai.yaml
 ```yaml
 ai:
-  provider: "gpt" # Options: gpt, gemini, ollama, gemini_cli
-  api_key: "sk-..." # Your API key for the selected provider
+  provider: gpt     # gpt | gemini | ollama | geminicli
+  api_key: "sk-..." # Optional here; can be provided via env/flag
+
+# Only needed if you use provider=ollama
+ollama:
+  path: "/usr/local/bin/ollama"
+```
+Example gitai.json
+```json
+{
+  "ai": {
+    "provider": "gpt",
+    "api_key": "sk-..."
+  },
+  "ollama": {
+    "path": "/usr/local/bin/ollama"
+  }
+}
 ```
 
-For local models (Ollama), set the path in `gitai.yaml`:
+Examples
+- Use local Ollama via flag:
+  - `gitai suggest --provider=ollama`
+- Use OpenAI with env var:
+  - ```export GITAI_AI_API_KEY="sk-..."```
+  - ```gitai suggest --provider=gpt```
+- Use config file only:
+  - Create the gitai file in any of the supported search paths
+  - `gitai suggest`
 
-```yaml
-ai:
-  provider: "ollama"
-  ollama_path: "/usr/local/bin/ollama"
-```
-
-You can still override some settings with environment variables if needed (e.g., for CI), but the recommended approach is to use the YAML config for all persistent settings.
-
-See `gitai.yaml` for the current configuration format and options.
-
-## ⚙️ Behaviour and defaults
-
-- The code includes adapters for multiple backends. The current default selection is implemented in **`internal/ai/ai.go`**. Edit that file to change preference/selection order if you need a different default.
+Notes
+- If multiple sources set the same key, flags win over env; env wins over config files.
+- For CI, prefer environment variables (GITAI_AI_PROVIDER, GITAI_AI_API_KEY) to avoid committing secrets.
+- OPENAI_API_KEY and GOOGLE_API_KEY are respected as fallbacks when using those providers.
 
 ## 🧩 How it works (internals)
 

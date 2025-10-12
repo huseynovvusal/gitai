@@ -1,7 +1,9 @@
 package ai
 
 import (
+	"context"
 	_ "embed"
+	"errors"
 	"huseynovvusal/gitai/internal/ai/test_prompts"
 	"regexp"
 	"testing"
@@ -28,15 +30,15 @@ func TestGenerateCommitMessage_PropagatesError(t *testing.T) {
 	saved := callGemini
 	defer func() { callGemini = saved }()
 
-	callGemini = func(systemMessage string, userMessage string, maxTokens int32, temperature float32) (string, error) {
+	callGemini = func(ctx context.Context, systemMessage string, userMessage string, maxTokens int32, temperature float32) (string, error) {
 		return "", ErrNoResponse
 	}
 
-	_, err := GenerateCommitMessage(ProviderGemini, "diff", "status")
+	_, err := GenerateCommitMessage(context.Background(), ProviderGemini, "diff", "status")
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if err != ErrNoResponse {
+	if !errors.Is(err, ErrNoResponse) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -59,7 +61,7 @@ func TestPromptIterations_TokenCounts(t *testing.T) {
 			name: "Test system prompt",
 			candidates: []string{
 				systemMessage,
-				"Expert Git generator. Summarialize diff/status to a single, scoped, conventional commit. Use: <type>(scope): <desc>. Body: dot list of non-trivial changes. Add BREAKING CHANGE footer if applicable. Output ONLY message.",
+				"Expert Git generator. Summarize diff/status to a single, scoped, conventional commit. Use: <type>(scope): <desc>. Body: dot list of non-trivial changes. Add BREAKING CHANGE footer if applicable. Output ONLY message.",
 				"Role: You expert Git message generator. Summarize the intent and scope of the following diff/status into a conventional, professional commit message with a single scope\nExpected Output: A single commit message in the Conventional Commits format:\n<type>[**single, highest-level component**]: <description>\n[Body, as dot list of non-trivial changes]\n[optional footer(s), include BREAKING CHANGES if necessary ]",
 				"You are a highly skilled software engineer with deep expertise in crafting precise, professional, and conventional git commit messages. Given a git diff and status, generate a single, clear, and accurate commit message that succinctly summarizes the intent and scope of the changes. Only output the commit message itself, with no explanations, prefixes, formatting, or any other text. The output must be ready to use as a commit message and strictly adhere to best practices.",
 			},
