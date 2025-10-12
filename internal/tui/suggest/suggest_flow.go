@@ -1,13 +1,14 @@
 package suggest
 
 import (
+	"context"
 	"huseynovvusal/gitai/internal/ai"
 	"huseynovvusal/gitai/internal/git"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func RunSuggestFlow(provider ai.Provider) {
+func RunSuggestFlow(ctx context.Context, provider ai.Provider) {
 	files, err := git.GetChangedFiles()
 	if err != nil {
 		panic(err)
@@ -40,8 +41,8 @@ func RunSuggestFlow(provider ai.Provider) {
 		return
 	}
 
-	aiModel := NewAIMessageModel(selectedFiles, provider)
-	aiModelProgram := tea.NewProgram(&aiModel)
+	aiModel := NewAIMessageModel(ctx, selectedFiles, provider)
+	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(ctx))
 
 	_, err = aiModelProgram.Run()
 	if err != nil {
