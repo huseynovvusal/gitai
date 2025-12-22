@@ -108,10 +108,10 @@ Supported keys
 - ollama.path: Path to the Ollama binary when provider=ollama
   - Env: OLLAMA_API_PATH
   - Config key: ollama.path
-- suggest.editor: Which editor to use for editing commit messages. Options: external, internal
+- suggest.editor: Which editor to use for editing commit messages. Options: system, internal, or a command (e.g. "nano", "code -w")
   - Flag: --editor or -e
   - Config key: suggest.editor
-  - Default: external (uses $EDITOR/$VISUAL)
+  - Default: system (uses $EDITOR/$VISUAL)
 
 Config files
 - Base name: gitai (no extension in code). Viper will load any supported format found (e.g., gitai.yaml, gitai.yml, gitai.json, etc.).
@@ -133,7 +133,7 @@ ollama:
   path: "/usr/local/bin/ollama"
 
 suggest:
-  editor: internal # Use the built-in TUI editor
+  editor: builtin # Use the built-in TUI editor
 ```
 Example gitai.json
 ```json
@@ -146,7 +146,7 @@ Example gitai.json
     "path": "/usr/local/bin/ollama"
   },
   "suggest": {
-    "editor": "internal"
+    "editor": "builtin"
   }
 }
 ```
@@ -157,8 +157,10 @@ Examples
 - Use OpenAI with env var:
   - ```export GITAI_AI_API_KEY="sk-..."```
   - ```gitai suggest --provider=gpt```
-- Use internal editor:
-  - `gitai suggest --editor=internal`
+- Use builtin editor:
+  - `gitai suggest --editor=builtin`
+- Use custom editor command:
+  - `gitai suggest --editor="code -w"`
 - Use config file only:
   - Create the gitai file in any of the supported search paths
   - `gitai suggest`
