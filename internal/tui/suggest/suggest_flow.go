@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func RunSuggestFlow(ctx context.Context, provider ai.Provider) {
+func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string) {
 	files, err := git.GetChangedFiles()
 	if err != nil {
 		panic(err)
@@ -41,7 +41,7 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider) {
 		return
 	}
 
-	aiModel := NewAIMessageModel(ctx, selectedFiles, provider)
+	aiModel := NewAIMessageModel(ctx, selectedFiles, provider, editorMode)
 	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(ctx))
 
 	_, err = aiModelProgram.Run()
