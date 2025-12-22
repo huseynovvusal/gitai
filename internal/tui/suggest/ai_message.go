@@ -150,7 +150,7 @@ func runPushAsync() tea.Cmd {
 	}
 }
 
-func openEditor(content string) tea.Cmd {
+func openEditor(content string, editorCmd string) tea.Cmd {
 	f, err := os.CreateTemp("", "gitai-commit-msg-*.txt")
 	if err != nil {
 		return func() tea.Msg { return aiErrorMsg{err: err} }
@@ -163,12 +163,15 @@ func openEditor(content string) tea.Cmd {
 	}
 	f.Close()
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = os.Getenv("VISUAL")
-	}
-	if editor == "" {
-		editor = "vim"
+	editor := editorCmd
+	if editor == "" || editor == "system" {
+		editor = os.Getenv("EDITOR")
+		if editor == "" {
+			editor = os.Getenv("VISUAL")
+		}
+		if editor == "" {
+			editor = "vim"
+		}
 	}
 
 	parts := strings.Fields(editor)
@@ -248,13 +251,13 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "e":
 			if m.state == StateGenerated {
-				if m.editorMode == "internal" {
+				if m.editorMode == "builtin" {
 					m.state = StateEditing
 					m.textArea.SetValue(m.commitMessage)
 					m.textArea.Focus()
 					return m, textarea.Blink
 				} else {
-					return m, openEditor(m.commitMessage)
+					return m, openEditor(m.commitMessage, m.editorMode)
 				}
 			}
 		case "r":
