@@ -2,9 +2,13 @@ package suggest
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"huseynovvusal/gitai/internal/ai"
@@ -35,6 +39,11 @@ type commitSecurityWarningMsg struct {
 	status string
 }
 
+type editorFinishedMsg struct {
+	err      error
+	filename string
+}
+
 type State int
 
 const (
@@ -46,6 +55,7 @@ const (
 	StatePushed                       // push succeeded; show success and exit option
 	StateError                        // show error (store message)
 	StateSecurityWarning              // warn and prompt the user for confirmation regarding safety reasons of the code being committed
+	StateEditing                      // Internal editor active
 )
 
 type AIMessageModel struct {
@@ -59,12 +69,20 @@ type AIMessageModel struct {
 	savedDiff     string
 	savedStatus   string
 	ctx           context.Context
+	editorMode    string
+	textArea      textarea.Model
 }
 
-func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider) AIMessageModel {
+func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider, editorMode string) AIMessageModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
+
+	ta := textarea.New()
+	ta.Placeholder = "Enter commit message..."
+	ta.ShowLineNumbers = false
+	ta.SetWidth(80)
+	ta.SetHeight(10)
 
 	return AIMessageModel{
 		files:         files,
@@ -75,6 +93,8 @@ func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider
 		cancel:        false,
 		ctx:           ctx,
 		provider:      provider,
+		editorMode:    editorMode,
+		textArea:      ta,
 	}
 }
 
@@ -130,6 +150,41 @@ func runPushAsync() tea.Cmd {
 	}
 }
 
+func openEditor(content string) tea.Cmd {
+	f, err := os.CreateTemp("", "gitai-commit-msg-*.txt")
+	if err != nil {
+		return func() tea.Msg { return aiErrorMsg{err: err} }
+	}
+
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return func() tea.Msg { return aiErrorMsg{err: err} }
+	}
+	f.Close()
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" {
+		editor = "vim"
+	}
+
+	parts := strings.Fields(editor)
+	var c *exec.Cmd
+	if len(parts) > 0 {
+		args := append(parts[1:], f.Name())
+		c = exec.Command(parts[0], args...)
+	} else {
+		c = exec.Command(editor, f.Name())
+	}
+
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedMsg{err: err, filename: f.Name()}
+	})
+}
+
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
@@ -138,6 +193,25 @@ func (m *AIMessageModel) Init() tea.Cmd {
 }
 
 func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle internal editor state
+	if m.state == StateEditing {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				m.state = StateGenerated
+				return m, nil
+			case "ctrl+s":
+				m.commitMessage = m.textArea.Value()
+				m.state = StateGenerated
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.textArea, cmd = m.textArea.Update(msg)
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -171,6 +245,23 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StatePushing
 				m.errMsg = ""
 				return m, tea.Batch(m.spinner.Tick, runPushAsync())
+			}
+		case "e":
+			if m.state == StateGenerated {
+				if m.editorMode == "internal" {
+					m.state = StateEditing
+					m.textArea.SetValue(m.commitMessage)
+					m.textArea.Focus()
+					return m, textarea.Blink
+				} else {
+					return m, openEditor(m.commitMessage)
+				}
+			}
+		case "r":
+			if m.state == StateGenerated {
+				m.state = StateGenerating
+				m.errMsg = ""
+				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, m.provider, m.files))
 			}
 		}
 	case spinner.TickMsg:
@@ -218,6 +309,24 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errMsg = msg.err.Error()
 			return m, nil
 		}
+	case editorFinishedMsg:
+		if msg.err != nil {
+			m.state = StateError
+			m.errMsg = msg.err.Error()
+			return m, nil
+		}
+
+		content, err := os.ReadFile(msg.filename)
+		os.Remove(msg.filename) // Clean up
+
+		if err != nil {
+			m.state = StateError
+			m.errMsg = err.Error()
+			return m, nil
+		}
+
+		m.commitMessage = strings.TrimSpace(string(content))
+		return m, nil
 	}
 
 	return m, nil
@@ -266,10 +375,7 @@ func (m *AIMessageModel) View() string {
 		header := shared.HeaderStyle.Render("AI commit message suggestion:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
-		// TODO: Implement edit and regenerate functionality
-		// For now, we just show commit and cancel options
-		// b.WriteString("\n[e] Edit   [r] Regenerate   [c] Commit   [x] Cancel\n")
-		b.WriteString("\n[c] Commit   [x] Cancel\n")
+		b.WriteString("\n[e] Edit   [r] Regenerate   [c] Commit   [x] Cancel\n")
 		return b.String()
 	case StateSecurityWarning:
 		var b strings.Builder
@@ -279,6 +385,13 @@ func (m *AIMessageModel) View() string {
 		b.WriteString("\nDo you wish to continue?\n")
 		b.WriteString("\n[Y] yes   [n] no\n")
 		return b.String()
+	case StateEditing:
+		return fmt.Sprintf(
+			"\n%s\n\n%s\n\n%s",
+			shared.HeaderStyle.Render("Edit commit message:"),
+			m.textArea.View(),
+			"(ctrl+s to save, esc to cancel)",
+		)
 	default:
 		// fallback - shouldn't happen
 		return "\n" + shared.HeaderStyle.Render("Unknown state") + "\n"
