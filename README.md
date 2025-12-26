@@ -12,6 +12,7 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 
 - **AI-generated commit message suggestions** based on repo diffs
 - _Interactive TUI_ to select files and review suggestions 🖱️
+- **Edit & Regenerate**: Tweak suggestions in-place or regenerate them with a keystroke 🔄
 - Pluggable AI backends: OpenAI, Google GenAI, Ollama (local)
 - Small single-binary distribution (Go) ⚙️
 
@@ -78,6 +79,7 @@ gitai suggest --provider=gemini_cli
 - list changed files (using `git status --porcelain`)
 - allow selecting files via an interactive file selector
 - fetch diffs for selected files and call the configured AI backend to produce suggestions
+- allow editing the suggestion (press `e`) or regenerating it (press `r`)
 
 See `internal/tui/suggest` for the implementation of the flow.
 
@@ -106,6 +108,10 @@ Supported keys
 - ollama.path: Path to the Ollama binary when provider=ollama
   - Env: OLLAMA_API_PATH
   - Config key: ollama.path
+- suggest.editor: Which editor to use for editing commit messages. Options: system, internal, or a command (e.g. "nano", "code -w")
+  - Flag: --editor or -e
+  - Config key: suggest.editor
+  - Default: system (uses $EDITOR/$VISUAL)
 
 Config files
 - Base name: gitai (no extension in code). Viper will load any supported format found (e.g., gitai.yaml, gitai.yml, gitai.json, etc.).
@@ -125,6 +131,9 @@ ai:
 # Only needed if you use provider=ollama
 ollama:
   path: "/usr/local/bin/ollama"
+
+suggest:
+  editor: builtin # Use the built-in TUI editor
 ```
 Example gitai.json
 ```json
@@ -135,6 +144,9 @@ Example gitai.json
   },
   "ollama": {
     "path": "/usr/local/bin/ollama"
+  },
+  "suggest": {
+    "editor": "builtin"
   }
 }
 ```
@@ -145,6 +157,10 @@ Examples
 - Use OpenAI with env var:
   - ```export GITAI_AI_API_KEY="sk-..."```
   - ```gitai suggest --provider=gpt```
+- Use builtin editor:
+  - `gitai suggest --editor=builtin`
+- Use custom editor command:
+  - `gitai suggest --editor="code -w"`
 - Use config file only:
   - Create the gitai file in any of the supported search paths
   - `gitai suggest`
