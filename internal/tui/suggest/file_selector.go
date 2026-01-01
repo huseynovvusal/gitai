@@ -2,27 +2,35 @@ package suggest
 
 import (
 	"fmt"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/paginator"
+	"huseynovvusal/gitai/internal/tui/multilist"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
 
+var docStyle = lipgloss.NewStyle().Margin(1, 2)
+
 type FileSelectorModel struct {
-	files    []string
-	selected map[int]bool
-	cursor   int
-	quitting bool
-	done     bool
+	MultiList multilist.Model
+	quitting  bool
+	done      bool
 }
 
 func NewFileSelectorModel(files []string) FileSelectorModel {
 	return FileSelectorModel{
-		files:    files,
-		selected: make(map[int]bool),
-		cursor:   0,
+		MultiList: multilist.New(
+			files,
+			"Select files to include in commit",
+			multilist.WithHeight(15),
+			multilist.WithPaginatorType(paginator.Arabic),
+		),
 		quitting: false,
+		done:     false,
 	}
 }
 
@@ -32,41 +40,31 @@ func (m *FileSelectorModel) Init() tea.Cmd {
 
 func (m *FileSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		h, v := docStyle.GetFrameSize()
+		m.MultiList.SetSize(msg.Width-h, msg.Height-v)
+
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			m.quitting = true
-			return m, tea.Quit
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.files)-1 {
-				m.cursor++
-			}
-		case " ":
-			m.selected[m.cursor] = !m.selected[m.cursor]
-		case "a":
-			var all = true
-			for i := range m.files {
-				if !m.selected[i] {
-					all = false
-					break
-				}
-			}
-			for i := range m.files {
-				m.selected[i] = !all
-			}
-		case "enter":
-			if m.anySelected() {
-				m.done = true
+		// Handle global keys for the specific screen here
+		if m.MultiList.List.FilterState() != list.Filtering {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				m.quitting = true
 				return m, tea.Quit
+			case "enter":
+				// Validation: Ensure at least one file is selected
+				if len(m.MultiList.GetSelected()) > 0 {
+					m.done = true
+					return m, tea.Quit
+				}
 			}
 		}
 	}
 
-	return m, nil
+	// Forward everything else to the wrapper
+	var cmd tea.Cmd
+	m.MultiList, cmd = m.MultiList.Update(msg)
+	return m, cmd
 }
 
 func (m *FileSelectorModel) View() string {
@@ -74,69 +72,18 @@ func (m *FileSelectorModel) View() string {
 		return ""
 	}
 
-	var b strings.Builder
-
 	if m.done {
-		header := shared.HeaderStyle.Render("Selected files for commit:")
-		b.WriteString("\n" + header + "\n")
-
-		for i, file := range m.files {
-			if m.selected[i] {
-				line := fmt.Sprintf(" - %s", shared.FileStyle.Render(file))
-				b.WriteString(line + "\n")
-			}
+		var b strings.Builder
+		b.WriteString(shared.HeaderStyle.Render("Selected files:") + "\n")
+		for _, f := range m.GetSelectedFiles() {
+			b.WriteString(fmt.Sprintf(" - %s\n", f))
 		}
-
 		return b.String()
 	}
 
-	header := shared.HeaderStyle.Render("Select files to include in commit:")
-	b.WriteString("\n" + header + "\n")
-
-	for i, file := range m.files {
-		var checked string
-
-		if m.selected[i] {
-			checked = shared.CheckedStyle.Render("[x]")
-		} else {
-			checked = shared.CheckedStyle.Render("[ ]")
-		}
-
-		cursor := " "
-
-		line := fmt.Sprintf("%s %s %s", cursor, checked, shared.FileStyle.Render(file))
-
-		if m.cursor == i {
-			cursor = shared.CursorStyle.Render(">")
-			line = shared.SelectedStyle.Render(fmt.Sprintf("%s %s %s", cursor, checked, shared.FileStyle.Render(file)))
-		}
-
-		b.WriteString(line + "\n")
-	}
-
-	b.WriteString("\n[a] Select all   [space] Toggle   [enter] OK   [q] Quit\n")
-
-	return b.String()
-}
-
-func (m *FileSelectorModel) anySelected() bool {
-	for _, selected := range m.selected {
-		if selected {
-			return true
-		}
-	}
-
-	return false
+	return docStyle.Render(m.MultiList.View())
 }
 
 func (m *FileSelectorModel) GetSelectedFiles() []string {
-	var selectedFiles []string
-
-	for i, selected := range m.selected {
-		if selected && i < len(m.files) {
-			selectedFiles = append(selectedFiles, m.files[i])
-		}
-	}
-
-	return selectedFiles
+	return m.MultiList.GetSelected()
 }
