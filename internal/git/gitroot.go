@@ -1,14 +1,13 @@
 package git
 
 import (
-	"os/exec"
 	"strings"
 )
 
 func GetGitRoot() (string, error) {
 	// Executes: git rev-parse --show-toplevel
 	// This command outputs the absolute path to the repository root.
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd := command("git", "rev-parse", "--show-toplevel")
 
 	// Capture the output
 	output, err := cmd.Output()

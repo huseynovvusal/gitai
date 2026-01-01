@@ -174,8 +174,11 @@ var callGemini = CallGemini
 var callOllama = CallOllama
 var callGeminiCLI = CallGeminiCLI
 
-func GenerateCommitMessage(ctx context.Context, provider Provider, diff string, status string) (string, error) {
+func GenerateCommitMessage(ctx context.Context, provider Provider, diff string, status string, hint string) (string, error) {
 	userMessage := "diff: " + diff + "\n\nstatus: " + status
+	if hint != "" {
+		userMessage += "\n\nUser context/instruction: " + hint
+	}
 
 	switch provider {
 	case ProviderGPT:
