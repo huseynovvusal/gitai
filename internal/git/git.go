@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -112,7 +113,19 @@ func GetChangesForFiles(files []string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("git diff failed: %w\n%s", err, stderr.String())
+		// If git diff HEAD fails, it likely means the project is new and has no HEAD.
+		// In this case, we read the full content of the files.
+		var sb strings.Builder
+		for _, f := range clean {
+			content, readErr := os.ReadFile(f)
+			if readErr != nil {
+				return "", fmt.Errorf("git diff failed: %w\n%s\nAlso failed to read file %s: %v", err, stderr.String(), f, readErr)
+			}
+			sb.WriteString(fmt.Sprintf("File: %s\n", f))
+			sb.Write(content)
+			sb.WriteString("\n")
+		}
+		return sb.String(), nil
 	}
 
 	return out.String(), nil

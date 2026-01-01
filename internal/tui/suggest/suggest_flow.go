@@ -29,12 +29,7 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string
 		return
 	}
 
-	selectedFiles := []string{}
-	for i := range fileSelectorModel.files {
-		if fileSelectorModel.selected[i] {
-			selectedFiles = append(selectedFiles, fileSelectorModel.files[i])
-		}
-	}
+	selectedFiles := fileSelectorModel.GetSelectedFiles()
 
 	if len(selectedFiles) == 0 {
 		println("No files selected.")
