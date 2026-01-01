@@ -34,7 +34,7 @@ func TestGenerateCommitMessage_PropagatesError(t *testing.T) {
 		return "", ErrNoResponse
 	}
 
-	_, err := GenerateCommitMessage(context.Background(), ProviderGemini, "diff", "status")
+	_, err := GenerateCommitMessage(context.Background(), ProviderGemini, "diff", "status", "")
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}

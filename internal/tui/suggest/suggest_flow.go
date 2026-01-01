@@ -36,7 +36,19 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string
 		return
 	}
 
-	aiModel := NewAIMessageModel(ctx, selectedFiles, provider, editorMode)
+	hintInputModel := NewHintInputModel(JiraHintProcessor, GitHubHintProcessor)
+	hintInputProgram := tea.NewProgram(&hintInputModel)
+	if _, err := hintInputProgram.Run(); err != nil {
+		panic(err)
+	}
+
+	if hintInputModel.quitting {
+		return
+	}
+
+	hint := hintInputModel.GetHint()
+
+	aiModel := NewAIMessageModel(ctx, selectedFiles, provider, editorMode, hint)
 	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(ctx))
 
 	_, err = aiModelProgram.Run()
