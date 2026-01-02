@@ -239,6 +239,70 @@ func cleanPath(path string) string {
 	return path
 }
 
+// GetCurrentBranch returns the name of the current branch.
+func GetCurrentBranch() (string, error) {
+	out, err := command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// GetRemoteURL returns the URL for the specified remote.
+func GetRemoteURL(remote string) (string, error) {
+	out, err := command("git", "remote", "get-url", remote).Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get remote URL for %s: %w", remote, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// GetPullRequestURL constructs a pull request URL based on the current branch and remote "origin".
+// It supports GitHub, GitLab, and Bitbucket.
+func GetPullRequestURL() (string, error) {
+	branch, err := GetCurrentBranch()
+	if err != nil {
+		return "", err
+	}
+
+	remoteURL, err := GetRemoteURL("origin")
+	if err != nil {
+		return "", err
+	}
+
+	// Normalize URL: Convert SSH to HTTPS
+	// git@github.com:user/repo.git -> https://github.com/user/repo
+	remoteURL = strings.TrimSpace(remoteURL)
+	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+
+	if strings.HasPrefix(remoteURL, "git@") {
+		remoteURL = strings.TrimPrefix(remoteURL, "git@")
+		// Replace the first ':' with '/' (e.g. github.com:user -> github.com/user)
+		if i := strings.Index(remoteURL, ":"); i != -1 {
+			remoteURL = remoteURL[:i] + "/" + remoteURL[i+1:]
+		}
+		remoteURL = "https://" + remoteURL
+	} else if !strings.HasPrefix(remoteURL, "http://") && !strings.HasPrefix(remoteURL, "https://") {
+		// Handle cases where it might be just host:path/repo without schema (rare but possible in config)
+		if i := strings.Index(remoteURL, ":"); i != -1 {
+			remoteURL = remoteURL[:i] + "/" + remoteURL[i+1:]
+		}
+		remoteURL = "https://" + remoteURL
+	}
+
+	if strings.Contains(remoteURL, "github.com") {
+		return fmt.Sprintf("%s/pull/new/%s", remoteURL, branch), nil
+	}
+	if strings.Contains(remoteURL, "gitlab.com") {
+		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", remoteURL, branch), nil
+	}
+	if strings.Contains(remoteURL, "bitbucket.org") {
+		return fmt.Sprintf("%s/pull-requests/new?source=%s", remoteURL, branch), nil
+	}
+
+	return "", fmt.Errorf("unknown remote host: %s", remoteURL)
+}
+
 // Push pushes the current branch to the remote repository.
 // It returns the command output and any error encountered.
 func Push() (string, error) {
