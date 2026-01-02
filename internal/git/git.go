@@ -17,14 +17,12 @@ var command = exec.Command
 // GetStatusForFiles returns the `git status --porcelain` output, but only for
 // the files specified in the input list.
 func GetStatusForFiles(files []string) (string, error) {
-	// If the input list is empty, there's nothing to do.
 	if len(files) == 0 {
 		return "", nil
 	}
 
 	files = expandFiles(files)
 
-	// Get the status for the entire repository.
 	args := []string{"status", "--porcelain", "--"}
 	args = append(args, files...)
 	cmd := command("git", args...)
@@ -35,7 +33,6 @@ func GetStatusForFiles(files []string) (string, error) {
 	allLines := strings.Split(string(out), "\n")
 	relevantLines := filterStatusLines(allLines, files)
 
-	// Join the filtered lines back into a single string.
 	return strings.Join(relevantLines, "\n"), nil
 }
 
@@ -45,7 +42,7 @@ func filterStatusLines(allLines []string, files []string) []string {
 	var relevantLines []string
 	for _, line := range allLines {
 		if len(line) < 4 {
-			continue // Skip empty or malformed lines
+			continue
 		}
 		// The porcelain format is "XY filepath", so the path starts at index 3.
 		filePath := strings.TrimSpace(line[3:])
@@ -57,12 +54,11 @@ func filterStatusLines(allLines []string, files []string) []string {
 			path2 := cleanPath(parts[1])
 			ok1 := slices.Contains(files, path1)
 			ok2 := slices.Contains(files, path2)
-			// Include the line if either the old or new name is in our list.
+
 			if ok1 || ok2 {
 				relevantLines = append(relevantLines, line)
 			}
 		} else {
-			// For all other cases, check if the file path is in our set.
 			if ok := slices.Contains(files, cleanPath(filePath)); ok {
 				relevantLines = append(relevantLines, line)
 			}
@@ -80,7 +76,6 @@ func GetChangedFiles() ([]string, error) {
 	lines := strings.Split(string(out), "\n")
 	var files []string
 	for _, line := range lines {
-		// Ensure the line is long enough and extract the file path
 		if len(line) > 3 {
 			files = append(files, strings.TrimSpace(line[3:]))
 		}
@@ -135,7 +130,6 @@ func GetChangesForFiles(files []string) (string, error) {
 }
 
 // Commit stages and commits *only* the specified files with the given message.
-// This is the corrected and safe version of the commit logic.
 func Commit(files []string, message string) error {
 	if len(files) == 0 {
 		return errors.New("no files provided to commit")
@@ -187,7 +181,6 @@ func Commit(files []string, message string) error {
 		return errors.New("no valid files resolved to commit")
 	}
 
-	// First, stage the specific files
 	if len(filesToAdd) > 0 {
 		addArgs := append([]string{"add", "--"}, filesToAdd...)
 		if out, err := command("git", addArgs...).CombinedOutput(); err != nil {
@@ -195,7 +188,6 @@ func Commit(files []string, message string) error {
 		}
 	}
 
-	// Then, commit *only* those files.
 	commitArgs := append([]string{"commit", "-m", message, "--"}, filesToCommit...)
 	if out, err := command("git", commitArgs...).CombinedOutput(); err != nil {
 		// Check if the error is "nothing to commit" and if so, return nil.

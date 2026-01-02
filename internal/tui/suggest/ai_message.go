@@ -291,7 +291,6 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// succeeded: transition to committed view and show commit message
 		m.state = StateCommitted
 		m.errMsg = ""
 		return m, nil
@@ -302,7 +301,6 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errMsg = msg.err.Error()
 			return m, nil
 		}
-		// push succeeded; transition to pushed state
 		m.state = StatePushed
 		m.pushOutput = msg.output
 		m.errMsg = ""
@@ -324,7 +322,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		content, err := os.ReadFile(msg.filename)
-		os.Remove(msg.filename) // Clean up
+		os.Remove(msg.filename)
 
 		if err != nil {
 			m.state = StateError
