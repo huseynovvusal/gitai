@@ -13,6 +13,9 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 - **AI-generated commit message suggestions** based on repo diffs
 - _Interactive TUI_ to select files and review suggestions 🖱️
 - **Edit & Regenerate**: Tweak suggestions in-place or regenerate them with a keystroke 🔄
+- **Security scanning**: Automatically detects sensitive data (keys, passwords) in diffs before sending to AI 🔒
+- **Smart ticket extraction**: Automatically parses Jira and GitHub issue URLs from hints to format commit headers 🎫
+- **Conventional Commits**: Generates messages following the Conventional Commits specification by default 📝
 - Pluggable AI backends: OpenAI, Google GenAI, Ollama (local)
 - Small single-binary distribution (Go) ⚙️
 
@@ -20,12 +23,12 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 
 ### 🛠️ Prerequisites
 
-- Go 1.20+ (Go modules are used; CONTRIBUTING recommends Go 1.24+ for development)
+- Go 1.24+ (Go modules are used)
 - One of the supported AI providers (optional):
-  - OpenAI API key (OPENAI_API_KEY)
-  - Google API key for genai (GOOGLE_API_KEY)
-  - Ollama binary available and OLLAMA_API_PATH set (for local models)
-  - Gemini cli installed
+  - OpenAI API key (`OPENAI_API_KEY`)
+  - Google Gemini API key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
+  - Ollama binary available and `OLLAMA_API_PATH` set (for local models)
+  - Gemini CLI installed (for `geminicli` provider)
 
 ### 📦 Build and install
 
@@ -71,7 +74,7 @@ gitai suggest --provider=gemini
 
 
 # use Gemini cli
-gitai suggest --provider=gemini_cli
+gitai suggest --provider=geminicli
 ```
 
 `gitai suggest` will:
@@ -104,7 +107,7 @@ Supported keys
   - Env: GITAI_AI_API_KEY or GITAI_API_KEY
   - Provider fallbacks (legacy):
     - OpenAI: OPENAI_API_KEY
-    - Gemini: GOOGLE_API_KEY
+    - Gemini: GEMINI_API_KEY or GOOGLE_API_KEY
 - ollama.path: Path to the Ollama binary when provider=ollama
   - Env: OLLAMA_API_PATH
   - Config key: ollama.path
@@ -112,6 +115,8 @@ Supported keys
   - Flag: --editor or -e
   - Config key: suggest.editor
   - Default: system (uses $EDITOR/$VISUAL)
+- security.keywords (Build-time or Env):
+  - Env: GITAI_SENSITIVE_KEYWORDS (comma-separated list of keywords to detect in diffs)
 
 Config files
 - Base name: gitai (no extension in code). Viper will load any supported format found (e.g., gitai.yaml, gitai.yml, gitai.json, etc.).
@@ -175,10 +180,11 @@ Notes
 Core components live under `internal/`:
 
 - `internal/ai` — adapters for AI backends and the main prompt (`GenerateCommitMessage`)
-- `internal/git` — helpers that run git commands and parse diffs/status (helpers used by the TUI)
-- `internal/tui/suggest` — TUI flow (file selector → AI message view)
+- `internal/git` — helpers that run git commands and parse diffs/status
+- `internal/security` — local scanner that checks diffs for sensitive keywords before they are sent to an AI provider
+- `internal/tui/suggest` — TUI flow (file selector → hint input → AI message view)
 
-The entrypoint is `main.go` which dispatches to the Cobra-based CLI under `cmd/`.
+The interactive flow also includes **hint processing**: if you provide a Jira or GitHub issue URL in the hint field, Gitai extracts the ticket ID and instructs the AI to include it in the commit header.
 
 ## 🧑‍💻 Development
 
@@ -229,8 +235,9 @@ If you'd like help designing an enhancement (hooks, CI integrations, new backend
 
 ## 🔒 Security & Privacy
 
-- The tool may send diffs and repository content to third-party AI providers when generating messages — treat this like any other service that may upload code. Do not send secrets or sensitive data to remote AI providers.
-- If you need an offline-only workflow, prefer running local models via Ollama and keep `OLLAMA_API_PATH` configured.
+- **Local Keyword Scanner**: Gitai includes a built-in security layer that scans your diffs for sensitive information (like `api_key`, `password`, `private_key`) locally. If a match is found, it will warn you and block the request to the AI provider.
+- **Third-party AI**: The tool sends diffs and repository metadata to third-party AI providers when generating messages. Treat this like any other service that may upload code. Do not send secrets or sensitive data to remote AI providers.
+- **Offline Workflow**: For maximum privacy, run local models via **Ollama**. Gitai supports local Ollama endpoints, ensuring your code never leaves your machine.
 
 ## 📜 License
 
@@ -239,3 +246,4 @@ This project is released under the MIT License. See [LICENSE](LICENSE) for detai
 ## 👤 Authors
 
 Vusal Huseynov — original author
+Jonathan Artback - contributor 
