@@ -29,19 +29,26 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string
 		return
 	}
 
-	selectedFiles := []string{}
-	for i := range fileSelectorModel.files {
-		if fileSelectorModel.selected[i] {
-			selectedFiles = append(selectedFiles, fileSelectorModel.files[i])
-		}
-	}
+	selectedFiles := fileSelectorModel.GetSelectedFiles()
 
 	if len(selectedFiles) == 0 {
 		println("No files selected.")
 		return
 	}
 
-	aiModel := NewAIMessageModel(ctx, selectedFiles, provider, editorMode)
+	hintInputModel := NewHintInputModel(JiraHintProcessor, GitHubHintProcessor)
+	hintInputProgram := tea.NewProgram(&hintInputModel)
+	if _, err := hintInputProgram.Run(); err != nil {
+		panic(err)
+	}
+
+	if hintInputModel.quitting {
+		return
+	}
+
+	hint := hintInputModel.GetHint()
+
+	aiModel := NewAIMessageModel(ctx, selectedFiles, provider, editorMode, hint)
 	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(ctx))
 
 	_, err = aiModelProgram.Run()
