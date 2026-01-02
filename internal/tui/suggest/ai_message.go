@@ -30,7 +30,8 @@ type commitResultMsg struct {
 }
 
 type pushResultMsg struct {
-	err error
+	err    error
+	output string
 }
 
 type commitSecurityWarningMsg struct {
@@ -71,6 +72,11 @@ type AIMessageModel struct {
 	ctx           context.Context
 	editorMode    string
 	textArea      textarea.Model
+<<<<<<< Updated upstream
+=======
+	hint          string
+	pushOutput    string
+>>>>>>> Stashed changes
 }
 
 func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider, editorMode string) AIMessageModel {
@@ -145,8 +151,8 @@ func runCommitAsync(files []string, message string) tea.Cmd {
 
 func runPushAsync() tea.Cmd {
 	return func() tea.Msg {
-		err := git.Push()
-		return pushResultMsg{err: err}
+		out, err := git.Push()
+		return pushResultMsg{err: err, output: out}
 	}
 }
 
@@ -301,6 +307,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// push succeeded; transition to pushed state
 		m.state = StatePushed
+		m.pushOutput = msg.output
 		m.errMsg = ""
 		return m, tea.Quit
 	case commitSecurityWarningMsg:

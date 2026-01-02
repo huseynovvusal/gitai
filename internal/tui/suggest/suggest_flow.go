@@ -2,8 +2,10 @@ package suggest
 
 import (
 	"context"
+	"fmt"
 	"huseynovvusal/gitai/internal/ai"
 	"huseynovvusal/gitai/internal/git"
+	"regexp"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -44,9 +46,21 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string
 	aiModel := NewAIMessageModel(ctx, selectedFiles, provider, editorMode)
 	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(ctx))
 
-	_, err = aiModelProgram.Run()
+	finalModel, err := aiModelProgram.Run()
 	if err != nil {
 		panic(err)
 	}
 
+	if m, ok := finalModel.(*AIMessageModel); ok && m.state == StatePushed {
+		re := regexp.MustCompile(`remote:\s*(https?://\S+)`)
+		matches := re.FindAllStringSubmatch(m.pushOutput, -1)
+		if len(matches) > 0 {
+			fmt.Println()
+		}
+		for _, match := range matches {
+			if len(match) > 1 {
+				fmt.Printf("Create a Pull Request: %s\n", match[1])
+			}
+		}
+	}
 }
