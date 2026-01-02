@@ -398,21 +398,20 @@ func TestPush(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
-			defer func() { command = exec.Command }()
-
-			err := Push()
-
-			if err != nil && tc.expectedErr == "" {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if err == nil && tc.expectedErr != "" {
-				t.Fatalf("expected error but got none")
-			}
-			if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
-				t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
-			}
-		})
-	}
+		        t.Run(tc.name, func(t *testing.T) {
+		            command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
+		            defer func() { command = exec.Command }()
+		
+		            _, err := Push()
+		
+		            if err != nil && tc.expectedErr == "" {
+		                t.Fatalf("unexpected error: %v", err)
+		            }
+		            if err == nil && tc.expectedErr != "" {
+		                t.Fatalf("expected error but got none")
+		            }
+		            if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
+		                t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
+		            }
+		        })	}
 }

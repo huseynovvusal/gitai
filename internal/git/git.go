@@ -240,12 +240,13 @@ func cleanPath(path string) string {
 }
 
 // Push pushes the current branch to the remote repository.
-// This simplified version returns Git's helpful error messages directly.
-func Push() error {
+// It returns the command output and any error encountered.
+func Push() (string, error) {
 	cmd := command("git", "push")
 	out, err := cmd.CombinedOutput()
+	output := string(out)
 	if err != nil {
-		return fmt.Errorf("git push failed: %s", string(out))
+		return output, fmt.Errorf("git push failed: %s", output)
 	}
-	return nil
+	return output, nil
 }
