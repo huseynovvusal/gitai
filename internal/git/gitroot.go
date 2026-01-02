@@ -12,8 +12,8 @@ func GetGitRoot() (string, error) {
 	// Capture the output
 	output, err := cmd.Output()
 	if err != nil {
-		// Return nil error if 'git' command isn't found or if not in a git repo
-		// This allows the app to proceed using other config paths.
+		// Return nil error if the 'git' command isn't found or if not in a git repo
+		// This allows the app to proceed to use other config paths.
 		return "", err
 	}
 
