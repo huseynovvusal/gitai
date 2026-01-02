@@ -60,6 +60,7 @@ func initConfig() {
 	_ = viper.BindEnv("ollama.path", "OLLAMA_API_PATH")
 	_ = viper.BindEnv("ai.api_key", "OPENAI_API_KEY")
 	_ = viper.BindEnv("ai.api_key", "GEMINI_API_KEY")
+	_ = viper.BindEnv("ai.api_key", "GOOGLE_API_KEY")
 	_ = viper.BindEnv("ai.api_key", "GITAI_API_KEY")
 
 	// --- Read Configuration ---

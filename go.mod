@@ -13,7 +13,6 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/yubiquita/gemini-cli-wrapper v0.3.0
 	google.golang.org/genai v1.26.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
