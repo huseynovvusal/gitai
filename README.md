@@ -23,8 +23,8 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 
 ### 🛠️ Prerequisites
 
-- Go 1.24+ (Go modules are used)
-- One of the supported AI providers (optional):
+- Go 1.20+ (Go modules are used; CONTRIBUTING recommends Go 1.24+ for development)
+t - One of the supported AI providers (optional):
   - OpenAI API key (`OPENAI_API_KEY`)
   - Google Gemini API key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
   - Ollama binary available and `OLLAMA_API_PATH` set (for local models)
