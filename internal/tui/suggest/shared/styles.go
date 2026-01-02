@@ -24,4 +24,5 @@ var (
 	// Selected: keep a distinct background to clearly show selection
 	SelectedStyle = lipgloss.NewStyle().Bold(true).Background(SelectedBg).Foreground(BaseFg)
 	ErrorStyle    = lipgloss.NewStyle().Foreground(ErrorFg).Bold(true)
+	DocStyle      = lipgloss.NewStyle().Margin(1, 2)
 )
