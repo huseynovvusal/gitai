@@ -116,6 +116,13 @@ func TestGetStatusForFiles(t *testing.T) {
 			expectedCmdArgs: []string{"git", "status", "--porcelain", "--", "new-name.go"},
 		},
 		{
+			name:            "renamed file string",
+			files:           []string{"old.txt -> new.txt"},
+			stdout:          "R  old.txt -> new.txt",
+			expected:        "R  old.txt -> new.txt",
+			expectedCmdArgs: []string{"git", "status", "--porcelain", "--", "old.txt", "new.txt"},
+		},
+		{
 			name:            "git status error",
 			files:           []string{"file1.go"},
 			stdout:          "git error", // CombinedOutput puts stderr into the output buffer
@@ -291,6 +298,8 @@ func TestCommit(t *testing.T) {
 			files:   []string{"file1.go"},
 			message: "test commit",
 			calls: []mockCall{
+				{expectedArgs: []string{"git", "ls-files", "--", "file1.go"}, stdout: "file1.go"},
+				{expectedArgs: []string{"git", "diff", "--name-only", "--cached", "--", "file1.go"}},
 				{expectedArgs: []string{"git", "add", "--", "file1.go"}},
 				{expectedArgs: []string{"git", "commit", "-m", "test commit", "--", "file1.go"}, stdout: "[main 12345] test commit"},
 			},
@@ -300,6 +309,8 @@ func TestCommit(t *testing.T) {
 			files:   []string{"file1.go"},
 			message: "test commit",
 			calls: []mockCall{
+				{expectedArgs: []string{"git", "ls-files", "--", "file1.go"}, stdout: "file1.go"},
+				{expectedArgs: []string{"git", "diff", "--name-only", "--cached", "--", "file1.go"}},
 				{expectedArgs: []string{"git", "add", "--", "file1.go"}, stdout: "error adding", exitCode: 1},
 			},
 			expectedErr: "failed to stage files: exit status 1\nerror adding",
@@ -309,6 +320,8 @@ func TestCommit(t *testing.T) {
 			files:   []string{"file1.go"},
 			message: "test commit",
 			calls: []mockCall{
+				{expectedArgs: []string{"git", "ls-files", "--", "file1.go"}, stdout: "file1.go"},
+				{expectedArgs: []string{"git", "diff", "--name-only", "--cached", "--", "file1.go"}},
 				{expectedArgs: []string{"git", "add", "--", "file1.go"}},
 				{expectedArgs: []string{"git", "commit", "-m", "test commit", "--", "file1.go"}, stdout: "error committing", exitCode: 1},
 			},
@@ -319,10 +332,23 @@ func TestCommit(t *testing.T) {
 			files:   []string{"file1.go"},
 			message: "test commit",
 			calls: []mockCall{
+				{expectedArgs: []string{"git", "ls-files", "--", "file1.go"}, stdout: "file1.go"},
+				{expectedArgs: []string{"git", "diff", "--name-only", "--cached", "--", "file1.go"}},
 				{expectedArgs: []string{"git", "add", "--", "file1.go"}},
 				{expectedArgs: []string{"git", "commit", "-m", "test commit", "--", "file1.go"}, stdout: "nothing to commit, working tree clean", exitCode: 1},
 			},
 			expectedErr: "", // Should not return an error
+		},
+		{
+			name:    "commit rename",
+			files:   []string{"old.txt -> new.txt"},
+			message: "rename commit",
+			calls: []mockCall{
+				{expectedArgs: []string{"git", "ls-files", "--", "old.txt", "new.txt"}, stdout: "new.txt"},
+				{expectedArgs: []string{"git", "diff", "--name-only", "--cached", "--", "old.txt", "new.txt"}, stdout: "old.txt"},
+				{expectedArgs: []string{"git", "add", "--", "new.txt"}},
+				{expectedArgs: []string{"git", "commit", "-m", "rename commit", "--", "new.txt", "old.txt"}, stdout: "[main 12345] rename commit"},
+			},
 		},
 	}
 

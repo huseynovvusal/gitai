@@ -22,6 +22,8 @@ func GetStatusForFiles(files []string) (string, error) {
 		return "", nil
 	}
 
+	files = expandFiles(files)
+
 	// Get the status for the entire repository.
 	args := []string{"status", "--porcelain", "--"}
 	args = append(args, files...)
@@ -51,8 +53,8 @@ func filterStatusLines(allLines []string, files []string) []string {
 		// A special case is a renamed file, e.g., "R old-name -> new-name"
 		if strings.Contains(filePath, " -> ") {
 			parts := strings.Split(filePath, " -> ")
-			path1 := parts[0]
-			path2 := parts[1]
+			path1 := cleanPath(parts[0])
+			path2 := cleanPath(parts[1])
 			ok1 := slices.Contains(files, path1)
 			ok2 := slices.Contains(files, path2)
 			// Include the line if either the old or new name is in our list.
@@ -61,7 +63,7 @@ func filterStatusLines(allLines []string, files []string) []string {
 			}
 		} else {
 			// For all other cases, check if the file path is in our set.
-			if ok := slices.Contains(files, filePath); ok {
+			if ok := slices.Contains(files, cleanPath(filePath)); ok {
 				relevantLines = append(relevantLines, line)
 			}
 		}
@@ -90,6 +92,7 @@ func GetChangedFiles() ([]string, error) {
 // GetChangesForFiles returns the git diff for the specified files against HEAD.
 // This shows all staged and unstaged changes for only those files.
 func GetChangesForFiles(files []string) (string, error) {
+	files = expandFiles(files)
 	var clean []string
 	for _, f := range files {
 		f = strings.TrimSpace(f)
@@ -138,19 +141,64 @@ func Commit(files []string, message string) error {
 		return errors.New("no files provided to commit")
 	}
 
-	// First, stage the specific files
-	addArgs := append([]string{"add", "--"}, files...)
-	if out, err := command("git", addArgs...).CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to stage files: %w\n%s", err, string(out))
+	files = expandFiles(files)
+
+	var filesToAdd []string
+	var filesToCommit []string
+	var missingFiles []string
+
+	for _, f := range files {
+		if fileExists(f) {
+			filesToAdd = append(filesToAdd, f)
+			filesToCommit = append(filesToCommit, f)
+		} else {
+			missingFiles = append(missingFiles, f)
+		}
 	}
 
-	// Then, commit *only* those files, leaving other staged files alone.
-	// Note: We don't use -a here. We commit what we just added.
-	commitArgs := append([]string{"commit", "-m", message, "--"})
-	commitArgs = append(commitArgs, files...)
+	if len(missingFiles) > 0 {
+		// Check for unstaged deletions (files present in index but missing on disk)
+		cmd := command("git", append([]string{"ls-files", "--"}, missingFiles...)...)
+		out, _ := cmd.Output() // Ignore error, empty output is fine
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				filesToAdd = append(filesToAdd, line)
+				filesToCommit = append(filesToCommit, line)
+			}
+		}
+
+		// Check for staged deletions (files missing on disk AND changed in index)
+		cmd = command("git", append([]string{"diff", "--name-only", "--cached", "--"}, missingFiles...)...)
+		out, _ = cmd.Output()
+		lines = strings.Split(string(out), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				if !slices.Contains(filesToCommit, line) {
+					filesToCommit = append(filesToCommit, line)
+				}
+			}
+		}
+	}
+
+	if len(filesToCommit) == 0 {
+		return errors.New("no valid files resolved to commit")
+	}
+
+	// First, stage the specific files
+	if len(filesToAdd) > 0 {
+		addArgs := append([]string{"add", "--"}, filesToAdd...)
+		if out, err := command("git", addArgs...).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to stage files: %w\n%s", err, string(out))
+		}
+	}
+
+	// Then, commit *only* those files.
+	commitArgs := append([]string{"commit", "-m", message, "--"}, filesToCommit...)
 	if out, err := command("git", commitArgs...).CombinedOutput(); err != nil {
 		// Check if the error is "nothing to commit" and if so, return nil.
-		// This can happen if the files added had no actual changes.
 		if strings.Contains(string(out), "nothing to commit") {
 			return nil
 		}
@@ -158,6 +206,37 @@ func Commit(files []string, message string) error {
 	}
 
 	return nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return !os.IsNotExist(err)
+}
+
+// expandFiles handles the "old -> new" format returned by git status for renames.
+// It splits such strings into individual file paths.
+// It also strips surrounding double quotes if present, which git status adds for paths with spaces/special chars.
+func expandFiles(files []string) []string {
+	var expanded []string
+	for _, f := range files {
+		if strings.Contains(f, " -> ") {
+			parts := strings.Split(f, " -> ")
+			for _, part := range parts {
+				expanded = append(expanded, cleanPath(part))
+			}
+		} else {
+			expanded = append(expanded, cleanPath(f))
+		}
+	}
+	return expanded
+}
+
+func cleanPath(path string) string {
+	path = strings.TrimSpace(path)
+	if len(path) >= 2 && path[0] == '"' && path[len(path)-1] == '"' {
+		return path[1 : len(path)-1]
+	}
+	return path
 }
 
 // Push pushes the current branch to the remote repository.
