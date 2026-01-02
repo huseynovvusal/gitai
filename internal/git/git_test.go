@@ -415,3 +415,96 @@ func TestPush(t *testing.T) {
 		            }
 		        })	}
 }
+
+func TestGetPullRequestURL(t *testing.T) {
+	// We need to mock command calls for "rev-parse" and "remote get-url"
+	// Sequence of calls:
+	// 1. git rev-parse --abbrev-ref HEAD -> returns branch
+	// 2. git remote get-url origin -> returns remote URL
+
+	tests := []struct {
+		name           string
+		mockBranch     string
+		mockRemote     string
+		expectedURL    string
+		expectedErr    string
+		cmdErr         bool // if true, simulates command failure
+	}{
+		{
+			name:        "github https",
+			mockBranch:  "feature/abc",
+			mockRemote:  "https://github.com/user/repo.git",
+			expectedURL: "https://github.com/user/repo/pull/new/feature/abc",
+		},
+		{
+			name:        "github ssh",
+			mockBranch:  "main",
+			mockRemote:  "git@github.com:user/repo.git",
+			expectedURL: "https://github.com/user/repo/pull/new/main",
+		},
+		{
+			name:        "gitlab ssh",
+			mockBranch:  "fix/123",
+			mockRemote:  "git@gitlab.com:org/group/project.git",
+			expectedURL: "https://gitlab.com/org/group/project/-/merge_requests/new?merge_request[source_branch]=fix/123",
+		},
+		{
+			name:        "bitbucket ssh",
+			mockBranch:  "dev",
+			mockRemote:  "git@bitbucket.org:user/repo.git",
+			expectedURL: "https://bitbucket.org/user/repo/pull-requests/new?source=dev",
+		},
+		{
+			name:        "unknown host",
+			mockBranch:  "main",
+			mockRemote:  "git@example.com:user/repo.git",
+			expectedErr: "unknown remote host: https://example.com/user/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Mock command
+			callCount := 0
+			command = func(name string, args ...string) *exec.Cmd {
+				callCount++
+				
+				var output string
+				if len(args) > 0 && args[0] == "rev-parse" {
+					output = tt.mockBranch
+				} else if len(args) > 0 && args[0] == "remote" {
+					output = tt.mockRemote
+				} else {
+					// fallback or error
+					output = ""
+				}
+
+				cs := []string{"-test.run=TestHelperProcess", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				env := []string{"GO_WANT_HELPER_PROCESS=1", "STDOUT=" + output}
+				if tt.cmdErr {
+					env = append(env, "EXIT_CODE=1")
+				} else {
+					env = append(env, "EXIT_CODE=0")
+				}
+				cmd.Env = env
+				return cmd
+			}
+
+			url, err := GetPullRequestURL()
+			if tt.expectedErr != "" {
+				if err == nil || err.Error() != tt.expectedErr {
+					t.Errorf("expected error %v, got %v", tt.expectedErr, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if url != tt.expectedURL {
+					t.Errorf("expected url %s, got %s", tt.expectedURL, url)
+				}
+			}
+		})
+	}
+}

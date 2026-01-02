@@ -59,6 +59,14 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string
 	}
 
 	if m, ok := finalModel.(*AIMessageModel); ok && m.state == StatePushed {
+		// Try to construct PR link via git configuration (preferred)
+		prURL, err := git.GetPullRequestURL()
+		if err == nil && prURL != "" {
+			fmt.Printf("\nCreate a Pull Request: %s\n", prURL)
+			return
+		}
+
+		// Fallback: Try to find link in push output
 		re := regexp.MustCompile(`remote:\s*(https?://\S+)`)
 		matches := re.FindAllStringSubmatch(m.pushOutput, -1)
 		if len(matches) > 0 {
