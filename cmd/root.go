@@ -22,20 +22,17 @@ func init() {
 }
 
 func initConfig() {
-	// --- Config File Definition ---
-	viper.SetConfigName("gitai") // Searches for a file named 'gitai'
+	viper.SetConfigName("gitai")
 
-	// 1. System-wide configuration (highest precedence for fixed environment setup)
+	// 1. System-wide configuration
 	viper.AddConfigPath("/etc/gitai/")
 
-	// 2. User Home Directory paths (for user-specific settings)
+	// 2. User Home Directory paths
 	if home, err := os.UserHomeDir(); err == nil {
 		// XDG Base Directory Specification (recommended user config path on modern Linux/Mac)
-		// e.g., /home/user/.config/gitai/
 		viper.AddConfigPath(filepath.Join(home, ".config", "gitai"))
 
-		// Traditional dot-directory in home (common fallback)
-		// e.g., /home/user/.gitai/
+		// Traditional dot-directory in home
 		viper.AddConfigPath(filepath.Join(home, ".gitai"))
 	}
 	// 3. Current Git repository root directory
@@ -43,19 +40,15 @@ func initConfig() {
 		viper.AddConfigPath(gitRoot)
 	}
 
-	// 4. Current Working Directory (for local development/overrides)
+	// 4. Current Working Directory
 	viper.AddConfigPath(".")
-
-	// --- Environment Variable Setup (High Precedence) ---
 
 	// Sets the prefix for environment variables, e.g., GITAI_API_KEY
 	viper.SetEnvPrefix("gitai")
 
-	// Replaces dots in config keys with underscores for ENV var mapping
-	// e.g., config key "ai.api_key" maps to ENV var GITAI_AI_API_KEY
+	// config key "ai.api_key" maps to ENV var GITAI_AI_API_KEY
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	// Enable automatic reading of environment variables
 	viper.AutomaticEnv()
 	_ = viper.BindEnv("ollama.path", "OLLAMA_API_PATH")
 	_ = viper.BindEnv("ai.api_key", "OPENAI_API_KEY")
@@ -63,10 +56,6 @@ func initConfig() {
 	_ = viper.BindEnv("ai.api_key", "GOOGLE_API_KEY")
 	_ = viper.BindEnv("ai.api_key", "GITAI_API_KEY")
 
-	// --- Read Configuration ---
-
-	// Read the config file if present;
-	// Viper loads configuration from all found paths, merging them.
 	_ = viper.ReadInConfig()
 }
 

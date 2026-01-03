@@ -68,7 +68,7 @@ func (m *HintInputModel) View() string {
 	}
 	if m.done {
 		var b strings.Builder
-		header := shared.HeaderStyle.Render("User context instruction provided:")
+		header := shared.HeaderStyle.Render("Hint provided:")
 		b.WriteString("\n" + header + "\n")
 		val := m.hint
 		if val == "" {
@@ -80,7 +80,7 @@ func (m *HintInputModel) View() string {
 
 	return fmt.Sprintf(
 		"\n%s\n\n%s\n\n%s",
-		shared.HeaderStyle.Render("Provide a user context message for the AI (optional):"),
+		shared.HeaderStyle.Render("Provide a hint for the AI (optional):"),
 		m.textInput.View(),
 		"(esc to quit)",
 	)

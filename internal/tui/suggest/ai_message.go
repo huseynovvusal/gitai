@@ -30,7 +30,8 @@ type commitResultMsg struct {
 }
 
 type pushResultMsg struct {
-	err error
+	err    error
+	output string
 }
 
 type commitSecurityWarningMsg struct {
@@ -72,6 +73,7 @@ type AIMessageModel struct {
 	editorMode    string
 	textArea      textarea.Model
 	hint          string
+	pushOutput    string
 }
 
 func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider, editorMode string, hint string) AIMessageModel {
@@ -116,7 +118,7 @@ func runAIAsync(ctx context.Context, provider ai.Provider, files []string, hint 
 				if err != nil {
 					return commitSecurityWarningMsg{err: err, diff: diff, status: status}
 				}
-		
+
 				commitMessage, err := ai.GenerateCommitMessage(ctx, provider, diff, status, hint)
 				if err != nil {
 					return aiErrorMsg{err: err}
@@ -146,8 +148,8 @@ func runCommitAsync(files []string, message string) tea.Cmd {
 
 func runPushAsync() tea.Cmd {
 	return func() tea.Msg {
-		err := git.Push()
-		return pushResultMsg{err: err}
+		out, err := git.Push()
+		return pushResultMsg{err: err, output: out}
 	}
 }
 
@@ -289,7 +291,6 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// succeeded: transition to committed view and show commit message
 		m.state = StateCommitted
 		m.errMsg = ""
 		return m, nil
@@ -300,8 +301,8 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errMsg = msg.err.Error()
 			return m, nil
 		}
-		// push succeeded; transition to pushed state
 		m.state = StatePushed
+		m.pushOutput = msg.output
 		m.errMsg = ""
 		return m, tea.Quit
 	case commitSecurityWarningMsg:
@@ -321,7 +322,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		content, err := os.ReadFile(msg.filename)
-		os.Remove(msg.filename) // Clean up
+		os.Remove(msg.filename)
 
 		if err != nil {
 			m.state = StateError
