@@ -95,6 +95,14 @@ gitai suggest --provider=geminicli
 - fetch diffs for selected files and call the configured AI backend to produce suggestions
 - allow editing the suggestion (press `e`) or regenerating it (press `r`)
 
+You can also pass specific files or directories to skip the selection step:
+
+```sh
+gitai suggest internal/main.go README.md
+# or
+gitai suggest internal/
+```
+
 See `internal/tui/suggest` for the implementation of the flow.
 
 ## 🔧 Configuration

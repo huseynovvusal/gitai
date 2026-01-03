@@ -306,3 +306,23 @@ func Push() (string, error) {
 	}
 	return output, nil
 }
+
+// ResolvePath resolves a file path (relative to CWD) to paths relative to the git repository root.
+// It supports directories and globs by delegating to `git ls-files`.
+func ResolvePath(path string) ([]string, error) {
+	args := []string{"ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", path}
+	out, err := command("git", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve path %s: %w", path, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var paths []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	return paths, nil
+}
