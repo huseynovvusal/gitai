@@ -174,23 +174,55 @@ var callGemini = CallGemini
 var callOllama = CallOllama
 var callGeminiCLI = CallGeminiCLI
 
+func cleanCommitMessage(s string) string {
+	s = strings.TrimSpace(s)
+
+	// 1. Guard Clause: If it's not a code block, return early.
+	if !strings.HasPrefix(s, "```") || !strings.HasSuffix(s, "```") {
+		return s
+	}
+
+	// 2. Strip the fences
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+
+	// 3. Handle Language Identifier (e.g., ```go)
+	// strings.Cut splits the string at the first newline safely.
+	if firstLine, rest, found := strings.Cut(s, "\n"); found {
+		// If the first line is just a word (no spaces), treat it as a lang ID and discard it.
+		// Otherwise, keep the whole string (it might be content).
+		if !strings.Contains(firstLine, " ") {
+			s = rest
+		}
+	}
+
+	return strings.TrimSpace(s)
+}
+
 func GenerateCommitMessage(ctx context.Context, provider Provider, diff string, status string, hint string) (string, error) {
 	userMessage := "diff: " + diff + "\n\nstatus: " + status
 	if hint != "" {
 		userMessage += "\n\nUser context/instruction: " + hint
 	}
 
+	var msg string
+	var err error
 	switch provider {
 	case ProviderGPT:
-		return callGPT(ctx, systemMessage, userMessage, maxToken, temperature)
+		msg, err = callGPT(ctx, systemMessage, userMessage, maxToken, temperature)
 	case ProviderGemini:
-		return callGemini(ctx, systemMessage, userMessage, maxToken, temperature)
+		msg, err = callGemini(ctx, systemMessage, userMessage, maxToken, temperature)
 	case ProviderOllama:
-		return callOllama(ctx, systemMessage, userMessage)
+		msg, err = callOllama(ctx, systemMessage, userMessage)
 	case ProvideGeminiCLI:
-		return callGeminiCLI(systemMessage, userMessage)
-
+		msg, err = callGeminiCLI(systemMessage, userMessage)
 	default:
 		return "", fmt.Errorf("invalid AI provider: %s", provider)
 	}
+
+	if err != nil {
+		return "", err
+	}
+
+	return cleanCommitMessage(msg), nil
 }
