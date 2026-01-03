@@ -59,41 +59,21 @@ make install
 
 The `make install` target builds the `gitai` binary and moves it to `/usr/local/bin/` (may prompt for sudo). Alternatively copy `./bin/gitai` to a directory in your PATH.
 
-### ▶️ Run (example)
+### ▶️ Usage
 
-Generate commit message suggestions using the _interactive TUI_:
+#### Interactive Mode (Default)
+Run the command without arguments to start the interactive TUI flow:
 
 ```sh
 gitai suggest
 ```
 
-Selecting AI provider (flag or env)
+1.  **Select files**: Choose changed files from the list.
+2.  **Add hints**: Optionally provide context (e.g., ticket URL or "fixes login bug").
+3.  **Review**: The AI generates a message. You can **Edit** (`e`), **Regenerate** (`r`), or **Commit** (`c`).
 
-You can choose which AI backend to use with a flag or environment variable. The `--provider` flag overrides the env var for that run.
-
-```sh
-# use local Ollama via flag
-gitai suggest --provider=ollama
-
-# use OpenAI GPT
-gitai suggest --provider=gpt
-
-# use Gemini
-gitai suggest --provider=gemini
-
-
-# use Gemini cli
-gitai suggest --provider=geminicli
-```
-
-`gitai suggest` will:
-
-- list changed files (using `git status --porcelain`)
-- allow selecting files via an interactive file selector
-- fetch diffs for selected files and call the configured AI backend to produce suggestions
-- allow editing the suggestion (press `e`) or regenerating it (press `r`)
-
-You can also pass specific files or directories to skip the selection step:
+#### Targeted Mode
+Skip the file selector by passing specific files or directories directly:
 
 ```sh
 gitai suggest internal/main.go README.md
@@ -101,114 +81,43 @@ gitai suggest internal/main.go README.md
 gitai suggest internal/
 ```
 
-See `internal/tui/suggest` for the implementation of the flow.
+#### Selecting an AI Provider
+You can override the configured AI backend for a single run:
+
+```sh
+gitai suggest --provider=gpt      # OpenAI
+gitai suggest --provider=ollama   # Local Ollama
+gitai suggest --provider=gemini   # Google Gemini
+```
 
 ## 🔧 Configuration
 
-Configuration is managed with Viper and can be provided from, in order of precedence (highest first):
+Configuration is managed with Viper and supports CLI flags, environment variables, and config files (e.g., `gitai.yaml`).
 
-1. CLI flags
-2. Environment variables
-3. Config files
-4. Built-in defaults
+**Priorities:** Flags > Env Vars > Config Files > Defaults.
 
-You can mix and match; higher‑precedence sources override lower ones.
+### Documentation
+Detailed configuration guides are available in the `docs/wiki/` directory:
+- [**Configuration Reference**](docs/wiki/Configuration.md) (All options & files)
+- [**AI Providers**](docs/wiki/AI-Providers.md) (Setup for GPT, Gemini, Ollama)
+- [**Customization**](docs/wiki/Customization.md) (Editors, styles)
+- [**Security**](docs/wiki/Security.md) (Keyword scanner & privacy)
+- [**Internals**](docs/wiki/Internals.md) (Architecture & How it works)
 
-Supported keys
-- ai.provider: Which backend to use. Options: gpt, gemini, ollama, geminicli
-  - Flag: --provider or -p
-  - Env: GITAI_AI_PROVIDER
-  - Config key: ai.provider
-- ai.api_key: API key for the chosen backend
-  - Flag: --api_key or -k
-  - Env: GITAI_AI_API_KEY or GITAI_API_KEY
-  - Provider fallbacks (legacy):
-    - OpenAI: OPENAI_API_KEY
-    - Gemini: GEMINI_API_KEY or GOOGLE_API_KEY
-- ollama.path: Path to the Ollama binary when provider=ollama
-  - Env: OLLAMA_API_PATH
-  - Config key: ollama.path
-- suggest.editor: Which editor to use for editing commit messages. Options: system, internal, or a command (e.g. "nano", "code -w")
-  - Flag: --editor or -e
-  - Config key: suggest.editor
-  - Default: system (uses $EDITOR/$VISUAL)
-- security.keywords: Keywords to detect in diffs to prevent leaking secrets.
-  - Env: GITAI_SENSITIVE_KEYWORDS (comma-separated list)
-  - Config key: security.keywords (can be a list in YAML or a comma-separated string)
-  - Default: A robust list of common secret patterns (password, api_key, etc.)
-
-Config files
-- Base name: gitai (no extension in code). Viper will load any supported format found (e.g., gitai.yaml, gitai.yml, gitai.json, etc.).
-- Search paths (in this order):
-  1) /etc/gitai/
-  2) $HOME/.config/gitai/
-  3) $HOME/.gitai/
-  4) Current Git root directory 
-  5) Current working directory (.)
-
-Example gitai.yaml
+### Quick Example (`gitai.yaml`)
 ```yaml
 ai:
   provider: gpt     # gpt | gemini | ollama | geminicli
-  api_key: "sk-..." # Optional here; can be provided via env/flag
-
-# Only needed if you use provider=ollama
-ollama:
-  path: "/usr/local/bin/ollama"
+  temperature: 0.7
 
 suggest:
-  editor: builtin # Use the built-in TUI editor
-
-security:
-  keywords:
-    - "my_custom_secret"
-    - "internal_token"
-```
-Example gitai.json
-```json
-{
-  "ai": {
-    "provider": "gpt",
-    "api_key": "sk-..."
-  },
-  "ollama": {
-    "path": "/usr/local/bin/ollama"
-  },
-  "suggest": {
-    "editor": "builtin"
-  }
-}
+  editor: builtin   # builtin | system | "code -w"
 ```
 
-Examples
-- Use local Ollama via flag:
-  - `gitai suggest --provider=ollama`
-- Use OpenAI with env var:
-  - ```export GITAI_AI_API_KEY="sk-..."```
-  - ```gitai suggest --provider=gpt```
-- Use builtin editor:
-  - `gitai suggest --editor=builtin`
-- Use custom editor command:
-  - `gitai suggest --editor="code -w"`
-- Use config file only:
-  - Create the gitai file in any of the supported search paths
-  - `gitai suggest`
+### Common Environment Variables
+- `GITAI_AI_PROVIDER`: Override provider (e.g. `ollama`)
+- `GITAI_AI_API_KEY`: API key for cloud providers
 
-Notes
-- If multiple sources set the same key, flags win over env; env wins over config files.
-- For CI, prefer environment variables (GITAI_AI_PROVIDER, GITAI_AI_API_KEY) to avoid committing secrets.
-- OPENAI_API_KEY and GOOGLE_API_KEY are respected as fallbacks when using those providers.
-
-## 🧩 How it works (internals)
-
-Core components live under `internal/`:
-
-- `internal/ai` — adapters for AI backends and the main prompt (`GenerateCommitMessage`)
-- `internal/git` — helpers that run git commands and parse diffs/status
-- `internal/security` — local scanner that checks diffs for sensitive keywords before they are sent to an AI provider
-- `internal/tui/suggest` — TUI flow (file selector → hint input → AI message view)
-
-The interactive flow also includes **hint processing**: if you provide a Jira or GitHub issue URL in the hint field, Gitai extracts the ticket ID and instructs the AI to include it in the commit header.
 
 ## 🧑‍💻 Development
 

@@ -9,20 +9,7 @@ install:
 	go build -o bin/$(BINARY_NAME) main.go
 	sudo mv bin/$(BINARY_NAME) /usr/local/bin/
 
-
-# capture any extra make goals (positional) as the keyword string
-ARGS := $(MAKECMDGOALS)
-# grab second goal if present (first is the target name)
-KEYWORDS_FROM_GOALS := $(word 2,$(ARGS))
-
-# allow explicit KEYWORDS=... invocation to override positional
-KEYWORDS := $(or $(KEYWORDS),$(KEYWORDS_FROM_GOALS))
-
-# ignore unknown goals so an extra positional arg doesn't make make try to build a file
-%:
-	@:
-
-test: 
+test:
 	go test ./...
 
 lint:
