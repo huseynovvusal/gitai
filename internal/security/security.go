@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sourcegraph/go-diff/diff"
+	"github.com/spf13/viper"
 )
 
 type Finding struct {
@@ -16,39 +17,22 @@ type Finding struct {
 	Text string
 }
 
-var SensitiveKeywords = []string{
-	"password",
-	"passwd",
-	"pwd",
-	"secret",
-	"api_key",
-	"apikey",
-	"access_token",
-	"private_key",
-	"ssh-rsa",
-	"begin private key",
-	"aws_access_key_id",
-	"aws_secret_access_key",
-	"client_secret",
-	"jwt",
-	"encryption_key",
-}
-
-// BuildKeywordsCSV can be set at build time via -ldflags to overwrite defaults.
-// Example:
-// go build -ldflags "-X 'huseynovvusal/gitai/internal/security.BuildKeywordsCSV=my_secret,api_key'" ./...
-var BuildKeywordsCSV string
-
-func init() {
-	if v, ok := os.LookupEnv("GITAI_SENSITIVE_KEYWORDS"); ok && strings.TrimSpace(v) != "" {
-		SensitiveKeywords = parseKeywordsCSV(v)
-		return
+func GetSensitiveKeywords() []string {
+	// 1. Try getting as a slice (yaml list, or default value)
+	sl := viper.GetStringSlice("security.keywords")
+	if len(sl) > 0 {
+		return sl
 	}
 
-	if strings.TrimSpace(BuildKeywordsCSV) != "" {
-		SensitiveKeywords = parseKeywordsCSV(BuildKeywordsCSV)
+	// 2. Try getting as a string (env var CSV) if slice conversion failed
+	s := viper.GetString("security.keywords")
+	if s != "" {
+		return parseKeywordsCSV(s)
 	}
+
+	return []string{}
 }
+
 
 func parseKeywordsCSV(csv string) []string {
 	parts := strings.Split(csv, ",")
@@ -63,6 +47,8 @@ func parseKeywordsCSV(csv string) []string {
 }
 
 func CheckDiffSafety(diffText string) error {
+	keywords := GetSensitiveKeywords()
+
 	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
 	if err != nil {
 		return err
@@ -88,7 +74,7 @@ func CheckDiffSafety(diffText string) error {
 						continue
 					}
 					text := strings.TrimPrefix(ln, "+")
-					if containsKeyword(text) {
+					if containsKeyword(text, keywords) {
 						findings = append(findings, Finding{File: filename, Line: newLine, Text: strings.TrimSpace(text)})
 					}
 					newLine++
@@ -124,9 +110,9 @@ func CheckDiffSafety(diffText string) error {
 	return fmt.Errorf("%s", b.String())
 }
 
-func containsKeyword(s string) bool {
+func containsKeyword(s string, keywords []string) bool {
 	ls := strings.ToLower(s)
-	for _, kw := range SensitiveKeywords {
+	for _, kw := range keywords {
 		if strings.Contains(ls, kw) {
 			return true
 		}

@@ -62,6 +62,27 @@ func initConfig() {
 	_ = viper.BindEnv("ai.api_key", "GOOGLE_API_KEY")
 	_ = viper.BindEnv("ai.api_key", "GITAI_API_KEY")
 
+	// Bind security keywords to ENV var
+	_ = viper.BindEnv("security.keywords", "GITAI_SENSITIVE_KEYWORDS")
+
+	viper.SetDefault("security.keywords", []string{
+		"password",
+		"passwd",
+		"pwd",
+		"secret",
+		"api_key",
+		"apikey",
+		"access_token",
+		"private_key",
+		"ssh-rsa",
+		"begin private key",
+		"aws_access_key_id",
+		"aws_secret_access_key",
+		"client_secret",
+		"jwt",
+		"encryption_key",
+	})
+
 	_ = viper.ReadInConfig()
 }
 

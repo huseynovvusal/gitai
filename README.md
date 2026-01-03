@@ -55,8 +55,6 @@ make build
 
 ```sh
 make install
-# or if you want to personalize the keywords for the safety check of your diff
-make install-personalized-keys "comma,separated,keys"
 ```
 
 The `make install` target builds the `gitai` binary and moves it to `/usr/local/bin/` (may prompt for sudo). Alternatively copy `./bin/gitai` to a directory in your PATH.
@@ -134,8 +132,10 @@ Supported keys
   - Flag: --editor or -e
   - Config key: suggest.editor
   - Default: system (uses $EDITOR/$VISUAL)
-- security.keywords (Build-time or Env):
-  - Env: GITAI_SENSITIVE_KEYWORDS (comma-separated list of keywords to detect in diffs)
+- security.keywords: Keywords to detect in diffs to prevent leaking secrets.
+  - Env: GITAI_SENSITIVE_KEYWORDS (comma-separated list)
+  - Config key: security.keywords (can be a list in YAML or a comma-separated string)
+  - Default: A robust list of common secret patterns (password, api_key, etc.)
 
 Config files
 - Base name: gitai (no extension in code). Viper will load any supported format found (e.g., gitai.yaml, gitai.yml, gitai.json, etc.).
@@ -158,6 +158,11 @@ ollama:
 
 suggest:
   editor: builtin # Use the built-in TUI editor
+
+security:
+  keywords:
+    - "my_custom_secret"
+    - "internal_token"
 ```
 Example gitai.json
 ```json
