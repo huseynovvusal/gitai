@@ -30,6 +30,6 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           # You need to add this secret to your repo if you want to push to a separate homebrew tap
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
