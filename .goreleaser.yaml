@@ -48,32 +48,31 @@ changelog:
       - '^docs:'
       - '^test:'
 
-# Configure Homebrew Tap
-brews:
-  - repository:
-      owner: huseynovvusal
-      name: homebrew-tap
+# Configure Homebrew Cask
+homebrew_casks:
+  - name: gitai
+    repository:
+      owner: artback
+      name: homebrew-gitai
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     
-    # The project name and description for the formula.
-    name: gitai
-    homepage: "https://github.com/huseynovvusal/gitai"
+    homepage: "https://github.com/artback/gitai"
     description: "AI-powered Git Assistant"
     license: "MIT"
     
-    # Packages your package depends on.
-    dependencies:
-      - name: git
-    
-    # Tests to run after installation
-    test: |
-      system "#{bin}/gitai --version"
+    # Optional: helps pass `homebrew audit` if homepage is different from download domain
+    url:
+      verified: github.com/artback/gitai
+
+    # Specify the binary to be linked
+    binary: gitai
+
 
 # Configure Linux Packages (DEB/RPM)
 nfpms:
-  - maintainer: "Huseynov Vusal"
+  - maintainer: "Jonathan Artback"
     description: "AI-powered Git Assistant"
-    homepage: "https://github.com/huseynovvusal/gitai"
+    homepage: "https://github.com/artback/gitai"
     license: "MIT"
     formats:
       - deb
