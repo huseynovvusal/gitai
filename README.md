@@ -32,6 +32,17 @@ t - One of the supported AI providers (optional):
 
 ### 📦 Build and install
 
+#### Homebrew (macOS & Linux)
+
+You can install `gitai` using Homebrew:
+
+```sh
+brew tap artback/gitai
+brew install gitai
+```
+
+#### Manual Build
+
 1. Clone the repository and build:
 
 ```sh
@@ -209,6 +220,26 @@ go test ./...
 
 1. Add a new adapter under `internal/ai` that implements a function returning (string, error).
 2. Wire it into `GenerateCommitMessage` or create a configuration switch.
+
+### 🚀 Releasing
+
+This project uses [GoReleaser](https://goreleaser.com/) and GitHub Actions for releases. To create a new release:
+
+1. **Tag the commit**: Create a new semantic version tag.
+   ```sh
+   git tag -a v1.2.3 -m "Release v1.2.3"
+   ```
+2. **Push the tag**:
+   ```sh
+   git push origin v1.2.3
+   ```
+3. **Automated Release**: The GitHub Action will automatically:
+   - Build binaries for multiple platforms.
+   - Create a GitHub Release with changelog and assets.
+   - Update the Homebrew tap at `artback/homebrew-gitai`.
+   - Publish Linux packages (DEB/RPM).
+
+> **Note**: Ensure `TAP_GITHUB_TOKEN` is configured in the repository secrets for the Homebrew tap update to work.
 
 ## Star History
 
