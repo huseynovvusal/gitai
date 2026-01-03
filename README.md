@@ -243,7 +243,7 @@ This project uses [GoReleaser](https://goreleaser.com/) and GitHub Actions for r
    ```
 3. **Automated Release**: The GitHub Action will automatically:
    - Build binaries for multiple platforms.
-   - Create a GitHub Release with changelog and assets.
+   - Create a GitHub Release with a changelog and assets.
    - Update the Homebrew tap at `artback/homebrew-gitai`.
    - Publish Linux packages (DEB/RPM).
 
