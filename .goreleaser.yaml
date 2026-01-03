@@ -67,6 +67,14 @@ homebrew_casks:
     # Specify the binary to be linked
     binaries: [gitai]
 
+    # If your app/binary isn't signed and notarized, you'll need this:
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gitai"]
+          end
+
 
 # Configure Linux Packages (DEB/RPM)
 nfpms:
