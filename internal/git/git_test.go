@@ -506,3 +506,68 @@ func TestGetPullRequestURL(t *testing.T) {
 		})
 	}
 }
+
+func TestResolvePath(t *testing.T) {
+	testCases := []struct {
+		name            string
+		path            string
+		stdout          string
+		stderr          string
+		exitCode        int
+		expected        []string
+		expectedErr     string
+		expectedCmdArgs []string
+	}{
+		{
+			name:            "simple file",
+			path:            "main.go",
+			stdout:          "main.go\n",
+			expected:        []string{"main.go"},
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "main.go"},
+		},
+		{
+			name:            "directory",
+			path:            "cmd/",
+			stdout:          "cmd/root.go\ncmd/suggest.go\n",
+			expected:        []string{"cmd/root.go", "cmd/suggest.go"},
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "cmd/"},
+		},
+		{
+			name:            "path not found (ignored)",
+			path:            "ignored.file",
+			stdout:          "",
+			expected:        nil,
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "ignored.file"},
+		},
+		{
+			name:            "git error",
+			path:            "error.go",
+			stderr:          "git error",
+			exitCode:        1,
+			expectedErr:     "failed to resolve path",
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "error.go"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
+			defer func() { command = exec.Command }()
+
+			result, err := ResolvePath(tc.path)
+
+			if err != nil && tc.expectedErr == "" {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err == nil && tc.expectedErr != "" {
+				t.Fatalf("expected error but got none")
+			}
+			if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
+				t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("expected '%v', got '%v'", tc.expected, result)
+			}
+		})
+	}
+}

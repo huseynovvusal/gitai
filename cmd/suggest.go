@@ -10,7 +10,7 @@ import (
 )
 
 var suggestCmd = &cobra.Command{
-	Use:   "suggest",
+	Use:   "suggest [files...]",
 	Short: "Suggest commit messages for changed files using AI",
 	Run: func(cmd *cobra.Command, args []string) {
 		rootCtx, cancel := context.WithCancel(context.Background())
@@ -24,7 +24,7 @@ var suggestCmd = &cobra.Command{
 		}
 
 		editorMode := viper.GetString("suggest.editor")
-		suggest.RunSuggestFlow(rootCtx, provider, editorMode)
+		suggest.RunSuggestFlow(rootCtx, provider, editorMode, args)
 	},
 }
 

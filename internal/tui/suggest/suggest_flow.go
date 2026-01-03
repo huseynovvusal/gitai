@@ -14,7 +14,7 @@ var (
 	LinksRegex = regexp.MustCompile(`remote:\s*(https?://\S+)`)
 )
 
-func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string) {
+func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string, filesFromArgs []string) {
 	files, err := git.GetChangedFiles()
 	if err != nil {
 		panic(err)
@@ -25,17 +25,94 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string
 		return
 	}
 
-	fileSelectorModel := NewFileSelectorModel(files)
-	fileSelectorProgram := tea.NewProgram(&fileSelectorModel)
-	if _, err := fileSelectorProgram.Run(); err != nil {
-		panic(err)
-	}
+	var selectedFiles []string
 
-	if fileSelectorModel.quitting {
-		return
-	}
+	if len(filesFromArgs) > 0 {
+		// Filter filesFromArgs to ensure they are actually changed/available in git status
+		// This prevents errors if the user typos a filename or provides a file that isn't changed.
+		validFiles := make(map[string]bool)
+		for _, f := range files {
+			validFiles[f] = true
+		}
 
-	selectedFiles := fileSelectorModel.GetSelectedFiles()
+		for _, arg := range filesFromArgs {
+			resolvedPaths, err := git.ResolvePath(arg)
+			if err != nil {
+				fmt.Printf("Warning: error resolving file '%s': %v\n", arg, err)
+				continue
+			}
+			if len(resolvedPaths) == 0 {
+				fmt.Printf("Warning: file '%s' not found in git (ignored or deleted?)\n", arg)
+				continue
+			}
+
+			for _, resolved := range resolvedPaths {
+				if validFiles[resolved] {
+					selectedFiles = append(selectedFiles, resolved)
+				} else {
+					// Only warn if the specific file (not a dir expansion) was explicitly requested but not changed?
+					// Actually, if I do `gitai suggest .`, and most files are not changed, I don't want 1000 warnings.
+					// So I should probably only warn if *none* of the resolved paths were valid?
+					// Or just stay silent for individual files not being changed if they came from a glob/dir?
+					// But `arg` is what the user typed.
+					// If `arg` resulted in 1 file, and it's not changed -> warn.
+					// If `arg` resulted in 10 files, and 0 are changed -> warn.
+					// If `arg` resulted in 10 files, and 1 is changed -> ok.
+				}
+			}
+		}
+
+		// Let's refine the warning logic slightly after collecting all candidates
+		// But I need to know which arg produced which files to give good warnings.
+		// Re-implementing loop to improve UX:
+
+		// Clear selectedFiles and re-populate
+		selectedFiles = []string{}
+		
+		for _, arg := range filesFromArgs {
+			resolvedPaths, err := git.ResolvePath(arg)
+			if err != nil {
+				fmt.Printf("Warning: error resolving file '%s': %v\n", arg, err)
+				continue
+			}
+			if len(resolvedPaths) == 0 {
+				fmt.Printf("Warning: '%s' matched no tracked files\n", arg)
+				continue
+			}
+
+			foundAnyChange := false
+			for _, resolved := range resolvedPaths {
+				if validFiles[resolved] {
+					selectedFiles = append(selectedFiles, resolved)
+					foundAnyChange = true
+				}
+			}
+
+			if !foundAnyChange {
+				fmt.Printf("Warning: no changed files found matching '%s'\n", arg)
+			}
+		}
+
+		// Remove duplicates in case multiple args overlapped
+		selectedFiles = uniqueStrings(selectedFiles)
+
+		if len(selectedFiles) == 0 {
+			println("No valid changed files provided in arguments.")
+			return
+		}
+	} else {
+		fileSelectorModel := NewFileSelectorModel(files)
+		fileSelectorProgram := tea.NewProgram(&fileSelectorModel)
+		if _, err := fileSelectorProgram.Run(); err != nil {
+			panic(err)
+		}
+
+		if fileSelectorModel.quitting {
+			return
+		}
+
+		selectedFiles = fileSelectorModel.GetSelectedFiles()
+	}
 
 	if len(selectedFiles) == 0 {
 		println("No files selected.")
@@ -81,4 +158,16 @@ func RunSuggestFlow(ctx context.Context, provider ai.Provider, editorMode string
 			}
 		}
 	}
+}
+
+func uniqueStrings(slice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range slice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }
