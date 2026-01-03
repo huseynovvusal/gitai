@@ -1,0 +1,40 @@
+name: Auto Tag
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'VERSION'
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read VERSION
+        id: get_version
+        run: echo "VERSION=$(cat VERSION | xargs)" >> $GITHUB_OUTPUT
+
+      - name: Push Tag
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          TAG="v$VERSION"
+          
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists."
+            exit 1
+          fi
+          
+          git tag $TAG
+          git push origin $TAG
