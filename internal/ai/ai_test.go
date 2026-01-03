@@ -4,42 +4,40 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/ai/test_prompts"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/pkoukk/tiktoken-go"
 )
 
-// Test that compressWhitespace collapses all whitespace sequences and trims ends
-func TestCompressWhitespace(t *testing.T) {
-	in := "  some\n\n\t text\t with   spaces\n\n"
-	out := compressWhitespace(in)
-	if out != "some text with spaces" {
-		t.Fatalf("unexpected compressedUserMessage result: %q", out)
-	}
+// MockProvider is a mock implementation of AIProvider
+type MockProvider struct {
+	GenerateContentFunc func(ctx context.Context, systemMessage, userMessage string) (string, error)
+}
 
-	// ensure no double spaces remain
-	if regexp.MustCompile(`\s{2,}`).FindStringIndex(out) != nil {
-		t.Fatalf("compressedUserMessage output still contains multiple spaces: %q", out)
+func (m *MockProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
+	if m.GenerateContentFunc != nil {
+		return m.GenerateContentFunc(ctx, systemMessage, userMessage)
 	}
+	return "", nil
 }
 
 // Test that errors from provider propagate (e.g., ErrNoResponse)
-func TestGenerateCommitMessage_PropagatesError(t *testing.T) {
-	saved := callGemini
-	defer func() { callGemini = saved }()
-
-	callGemini = func(ctx context.Context, systemMessage string, userMessage string, maxTokens int32, temperature float32) (string, error) {
-		return "", ErrNoResponse
+func TestService_Generate_PropagatesError(t *testing.T) {
+	mockProvider := &MockProvider{
+		GenerateContentFunc: func(ctx context.Context, systemMessage, userMessage string) (string, error) {
+			return "", provider.ErrNoResponse
+		},
 	}
 
-	_, err := GenerateCommitMessage(context.Background(), ProviderGemini, "diff", "status", "")
+	service := NewService(mockProvider)
+
+	_, err := service.Generate(context.Background(), "diff", "status", "")
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if !errors.Is(err, ErrNoResponse) {
+	if !errors.Is(err, provider.ErrNoResponse) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -86,110 +84,6 @@ func TestPromptIterations_TokenCounts(t *testing.T) {
 				totalTokens += tokens
 
 				t.Logf("  Candidate %d: %d tokens", i, tokens)
-			}
-		})
-	}
-}
-
-func TestCleanCommitMessage(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "Basic string (no change)",
-			input:    "feat: add login",
-			expected: "feat: add login",
-		},
-		{
-			name:     "Trims outer whitespace",
-			input:    "   fix: typo   ",
-			expected: "fix: typo",
-		},
-		{
-			name:     "Simple Code Block",
-			input:    "```\nfeat: new feature\n```",
-			expected: "feat: new feature",
-		},
-		{
-			name:     "Code Block with Language ID (go)",
-			input:    "```go\nfunc main() {}\n```",
-			expected: "func main() {}",
-		},
-		{
-			name:     "Code Block with Language ID (markdown)",
-			input:    "```markdown\n# Title\n```",
-			expected: "# Title",
-		},
-		{
-			name:     "Preserves first line if it contains spaces (not a lang ID)",
-			input:    "```text with spaces\nshould be kept\n```",
-			expected: "text with spaces\nshould be kept",
-		},
-		{
-			name:     "Handles code block with no newline after start fence",
-			input:    "```single line block```",
-			expected: "single line block",
-		},
-		{
-			name:     "Ignores mismatched fences (Prefix only)",
-			input:    "```\nmissing end fence",
-			expected: "```\nmissing end fence",
-		},
-		{
-			name:     "Ignores mismatched fences (Suffix only)",
-			input:    "missing start fence\n```",
-			expected: "missing start fence\n```",
-		},
-		{
-			name:     "Nested empty lines are trimmed",
-			input:    "```\n\n\nreal content\n\n\n```",
-			expected: "real content",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := cleanCommitMessage(tt.input)
-			if got != tt.expected {
-				t.Errorf("cleanCommitMessage() = %q, want %q", got, tt.expected)
-			}
-		})
-	}
-}
-
-func BenchmarkCleanCommitMessage(b *testing.B) {
-	scenarios := []struct {
-		name  string
-		input string
-	}{
-		{
-			name:  "SimpleText",
-			input: "feat: just a simple commit message without any blocks",
-		},
-		{
-			name:  "CodeBlock_NoLang",
-			input: "```\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```",
-		},
-		{
-			name:  "CodeBlock_WithLang",
-			input: "```go\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```",
-		},
-		{
-			name:  "LargeInput",
-			input: "```json\n" + strings.Repeat(`{"key": "value"},`, 100) + "\n```",
-		},
-	}
-
-	for _, sc := range scenarios {
-		b.Run(sc.name, func(b *testing.B) {
-			// Report memory allocations (useful to ensure we aren't creating unnecessary string copies)
-			b.ReportAllocs()
-
-			for i := 0; i < b.N; i++ {
-				// The function call being measured
-				cleanCommitMessage(sc.input)
 			}
 		})
 	}

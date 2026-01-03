@@ -16,15 +16,15 @@ var (
 
 type Flow struct {
 	ctx            context.Context
-	provider       ai.Provider
+	generator      ai.CommitMessageGenerator
 	editorMode     string
 	hintProcessors []HintProcessor
 }
 
-func NewFlow(ctx context.Context, provider ai.Provider, editorMode string, hintProcessors ...HintProcessor) *Flow {
+func NewFlow(ctx context.Context, generator ai.CommitMessageGenerator, editorMode string, hintProcessors ...HintProcessor) *Flow {
 	return &Flow{
 		ctx:            ctx,
-		provider:       provider,
+		generator:      generator,
 		editorMode:     editorMode,
 		hintProcessors: hintProcessors,
 	}
@@ -56,7 +56,7 @@ func (s *Flow) Run(filesFromArgs []string) {
 	}
 
 	// 4. Run AI Generation Flow
-	aiModel := NewAIMessageModel(s.ctx, selectedFiles, s.provider, s.editorMode, hint)
+	aiModel := NewAIMessageModel(s.ctx, selectedFiles, s.generator, s.editorMode, hint)
 	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(s.ctx))
 
 	finalModel, err := aiModelProgram.Run()
