@@ -95,6 +95,14 @@ gitai suggest --provider=geminicli
 - fetch diffs for selected files and call the configured AI backend to produce suggestions
 - allow editing the suggestion (press `e`) or regenerating it (press `r`)
 
+You can also pass specific files or directories to skip the selection step:
+
+```sh
+gitai suggest internal/main.go README.md
+# or
+gitai suggest internal/
+```
+
 See `internal/tui/suggest` for the implementation of the flow.
 
 ## 🔧 Configuration
@@ -235,7 +243,7 @@ This project uses [GoReleaser](https://goreleaser.com/) and GitHub Actions for r
    ```
 3. **Automated Release**: The GitHub Action will automatically:
    - Build binaries for multiple platforms.
-   - Create a GitHub Release with changelog and assets.
+   - Create a GitHub Release with a changelog and assets.
    - Update the Homebrew tap at `artback/homebrew-gitai`.
    - Publish Linux packages (DEB/RPM).
 

@@ -74,13 +74,25 @@ func GetChangedFiles() ([]string, error) {
 		return nil, err
 	}
 	lines := strings.Split(string(out), "\n")
-	var files []string
+	var rawFiles []string
 	for _, line := range lines {
 		if len(line) > 3 {
-			files = append(files, strings.TrimSpace(line[3:]))
+			rawFiles = append(rawFiles, strings.TrimSpace(line[3:]))
 		}
 	}
-	return files, nil
+	return uniqueStrings(expandFiles(rawFiles)), nil
+}
+
+func uniqueStrings(slice []string) []string {
+	keys := make(map[string]bool)
+	list := make([]string, 0, len(slice))
+	for _, entry := range slice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }
 
 // GetChangesForFiles returns the git diff for only the specified files.
@@ -305,4 +317,24 @@ func Push() (string, error) {
 		return output, fmt.Errorf("git push failed: %s", output)
 	}
 	return output, nil
+}
+
+// ResolvePath resolves a file path (relative to CWD) to paths relative to the git repository root.
+// It supports directories and globs by delegating to `git ls-files`.
+func ResolvePath(path string) ([]string, error) {
+	args := []string{"ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", path}
+	out, err := command("git", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve path %s: %w", path, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var paths []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	return paths, nil
 }

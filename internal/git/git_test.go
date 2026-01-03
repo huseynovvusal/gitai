@@ -176,7 +176,7 @@ func TestGetChangedFiles(t *testing.T) {
 		{
 			name:            "no changed files",
 			stdout:          "",
-			expected:        nil,
+			expected:        []string{},
 			expectedCmdArgs: []string{"git", "status", "--porcelain"},
 		},
 		{
@@ -398,22 +398,23 @@ func TestPush(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		        t.Run(tc.name, func(t *testing.T) {
-		            command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
-		            defer func() { command = exec.Command }()
-		
-		            _, err := Push()
-		
-		            if err != nil && tc.expectedErr == "" {
-		                t.Fatalf("unexpected error: %v", err)
-		            }
-		            if err == nil && tc.expectedErr != "" {
-		                t.Fatalf("expected error but got none")
-		            }
-		            if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
-		                t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
-		            }
-		        })	}
+		t.Run(tc.name, func(t *testing.T) {
+			command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
+			defer func() { command = exec.Command }()
+
+			_, err := Push()
+
+			if err != nil && tc.expectedErr == "" {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err == nil && tc.expectedErr != "" {
+				t.Fatalf("expected error but got none")
+			}
+			if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
+				t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
+			}
+		})
+	}
 }
 
 func TestGetPullRequestURL(t *testing.T) {
@@ -423,12 +424,12 @@ func TestGetPullRequestURL(t *testing.T) {
 	// 2. git remote get-url origin -> returns remote URL
 
 	tests := []struct {
-		name           string
-		mockBranch     string
-		mockRemote     string
-		expectedURL    string
-		expectedErr    string
-		cmdErr         bool // if true, simulates command failure
+		name        string
+		mockBranch  string
+		mockRemote  string
+		expectedURL string
+		expectedErr string
+		cmdErr      bool // if true, simulates command failure
 	}{
 		{
 			name:        "github https",
@@ -467,7 +468,7 @@ func TestGetPullRequestURL(t *testing.T) {
 			callCount := 0
 			command = func(name string, args ...string) *exec.Cmd {
 				callCount++
-				
+
 				var output string
 				if len(args) > 0 && args[0] == "rev-parse" {
 					output = tt.mockBranch
@@ -502,6 +503,71 @@ func TestGetPullRequestURL(t *testing.T) {
 				if url != tt.expectedURL {
 					t.Errorf("expected url %s, got %s", tt.expectedURL, url)
 				}
+			}
+		})
+	}
+}
+
+func TestResolvePath(t *testing.T) {
+	testCases := []struct {
+		name            string
+		path            string
+		stdout          string
+		stderr          string
+		exitCode        int
+		expected        []string
+		expectedErr     string
+		expectedCmdArgs []string
+	}{
+		{
+			name:            "simple file",
+			path:            "main.go",
+			stdout:          "main.go\n",
+			expected:        []string{"main.go"},
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "main.go"},
+		},
+		{
+			name:            "directory",
+			path:            "cmd/",
+			stdout:          "cmd/root.go\ncmd/suggest.go\n",
+			expected:        []string{"cmd/root.go", "cmd/suggest.go"},
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "cmd/"},
+		},
+		{
+			name:            "path not found (ignored)",
+			path:            "ignored.file",
+			stdout:          "",
+			expected:        nil,
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "ignored.file"},
+		},
+		{
+			name:            "git error",
+			path:            "error.go",
+			stderr:          "git error",
+			exitCode:        1,
+			expectedErr:     "failed to resolve path",
+			expectedCmdArgs: []string{"git", "ls-files", "--full-name", "--others", "--cached", "--exclude-standard", "--", "error.go"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
+			defer func() { command = exec.Command }()
+
+			result, err := ResolvePath(tc.path)
+
+			if err != nil && tc.expectedErr == "" {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err == nil && tc.expectedErr != "" {
+				t.Fatalf("expected error but got none")
+			}
+			if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
+				t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("expected '%v', got '%v'", tc.expected, result)
 			}
 		})
 	}
