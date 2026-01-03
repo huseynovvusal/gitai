@@ -79,12 +79,11 @@ func TestPromptIterations_TokenCounts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var totalTokens int // To track the total tokens processed
+			var totalTokens int
 			for i, s := range tt.candidates {
 				tokens := len(enc.Encode(s, nil, nil))
 				totalTokens += tokens
 
-				// Print candidate token count (useful for debugging)
 				t.Logf("  Candidate %d: %d tokens", i, tokens)
 			}
 		})

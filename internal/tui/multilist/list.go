@@ -91,7 +91,6 @@ func New(data []string, title string, opts ...Option) Model {
 	l := list.New(items, delegate{}, 40, 20)
 	l.Title = title
 
-	// Default: No Status Bar, Arabic Numbers
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
 	l.Paginator.Type = paginator.Arabic
@@ -122,7 +121,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if m.List.FilterState() == list.Filtering {
 			break
 		}
-		// Use key.Matches to check against our defined bindings
 		if key.Matches(msg, m.keys.Toggle) {
 			return m.toggleCurrent()
 		}
@@ -135,8 +133,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	m.List, cmd = m.List.Update(msg)
 	return m, cmd
 }
-
-// ... (Rest of the file remains the same: View, SetSize, GetSelected, Toggles, Delegate) ...
 
 func (m Model) View() string {
 	return m.List.View()
@@ -170,7 +166,7 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 	globalIdx := -1
 	allWaitItems := m.List.Items()
 	for i, itm := range allWaitItems {
-		if itm.(Item).Value == item.Value { // Match by filename
+		if itm.(Item).Value == item.Value {
 			globalIdx = i
 			break
 		}
