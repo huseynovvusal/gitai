@@ -3,15 +3,37 @@ package cmd
 import (
 	"context"
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/tui/suggest"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var suggestCmd = &cobra.Command{
-	Use:   "suggest",
+	Use:   "suggest [files...]",
 	Short: "Suggest commit messages for changed files using AI",
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		files, err := git.GetChangedFiles()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		repoRoot, err := git.GetGitRoot()
+		if err != nil {
+			return files, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return files, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		return getFilteredSuggestions(toComplete, args, files, repoRoot, cwd), cobra.ShellCompDirectiveNoFileComp
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		rootCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -24,7 +46,9 @@ var suggestCmd = &cobra.Command{
 		}
 
 		editorMode := viper.GetString("suggest.editor")
-		suggest.RunSuggestFlow(rootCtx, provider, editorMode)
+
+		flow := suggest.NewFlow(rootCtx, provider, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor)
+		flow.Run(args)
 	},
 }
 
@@ -36,4 +60,33 @@ func init() {
 	_ = viper.BindPFlag("ai.api_key", suggestCmd.Flags().Lookup("api_key"))
 	_ = viper.BindPFlag("suggest.editor", suggestCmd.Flags().Lookup("editor"))
 	rootCmd.AddCommand(suggestCmd)
+}
+
+func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string) []string {
+	selectedSet := make(map[string]bool)
+	for _, arg := range selectedArgs {
+		if resolved, err := git.ResolvePath(arg); err == nil {
+			for _, r := range resolved {
+				selectedSet[r] = true
+			}
+		}
+	}
+
+	var suggestions []string
+	for _, f := range changedFiles {
+		if selectedSet[f] {
+			continue
+		}
+
+		relPath, err := filepath.Rel(cwd, filepath.Join(repoRoot, f))
+		if err != nil {
+			relPath = f
+		}
+
+		if strings.HasPrefix(toComplete, "./") && !strings.HasPrefix(relPath, "./") && !strings.HasPrefix(relPath, "..") {
+			relPath = "./" + relPath
+		}
+		suggestions = append(suggestions, relPath)
+	}
+	return suggestions
 }
