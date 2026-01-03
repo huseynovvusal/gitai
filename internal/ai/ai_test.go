@@ -6,6 +6,7 @@ import (
 	"errors"
 	"huseynovvusal/gitai/internal/ai/test_prompts"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/pkoukk/tiktoken-go"
@@ -85,6 +86,110 @@ func TestPromptIterations_TokenCounts(t *testing.T) {
 				totalTokens += tokens
 
 				t.Logf("  Candidate %d: %d tokens", i, tokens)
+			}
+		})
+	}
+}
+
+func TestCleanCommitMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Basic string (no change)",
+			input:    "feat: add login",
+			expected: "feat: add login",
+		},
+		{
+			name:     "Trims outer whitespace",
+			input:    "   fix: typo   ",
+			expected: "fix: typo",
+		},
+		{
+			name:     "Simple Code Block",
+			input:    "```\nfeat: new feature\n```",
+			expected: "feat: new feature",
+		},
+		{
+			name:     "Code Block with Language ID (go)",
+			input:    "```go\nfunc main() {}\n```",
+			expected: "func main() {}",
+		},
+		{
+			name:     "Code Block with Language ID (markdown)",
+			input:    "```markdown\n# Title\n```",
+			expected: "# Title",
+		},
+		{
+			name:     "Preserves first line if it contains spaces (not a lang ID)",
+			input:    "```text with spaces\nshould be kept\n```",
+			expected: "text with spaces\nshould be kept",
+		},
+		{
+			name:     "Handles code block with no newline after start fence",
+			input:    "```single line block```",
+			expected: "single line block",
+		},
+		{
+			name:     "Ignores mismatched fences (Prefix only)",
+			input:    "```\nmissing end fence",
+			expected: "```\nmissing end fence",
+		},
+		{
+			name:     "Ignores mismatched fences (Suffix only)",
+			input:    "missing start fence\n```",
+			expected: "missing start fence\n```",
+		},
+		{
+			name:     "Nested empty lines are trimmed",
+			input:    "```\n\n\nreal content\n\n\n```",
+			expected: "real content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanCommitMessage(tt.input)
+			if got != tt.expected {
+				t.Errorf("cleanCommitMessage() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func BenchmarkCleanCommitMessage(b *testing.B) {
+	scenarios := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "SimpleText",
+			input: "feat: just a simple commit message without any blocks",
+		},
+		{
+			name:  "CodeBlock_NoLang",
+			input: "```\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```",
+		},
+		{
+			name:  "CodeBlock_WithLang",
+			input: "```go\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```",
+		},
+		{
+			name:  "LargeInput",
+			input: "```json\n" + strings.Repeat(`{"key": "value"},`, 100) + "\n```",
+		},
+	}
+
+	for _, sc := range scenarios {
+		b.Run(sc.name, func(b *testing.B) {
+			// Report memory allocations (useful to ensure we aren't creating unnecessary string copies)
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				// The function call being measured
+				cleanCommitMessage(sc.input)
 			}
 		})
 	}
