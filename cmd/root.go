@@ -83,6 +83,8 @@ func initConfig() {
 		"encryption_key",
 	})
 
+	viper.SetDefault("suggest.bullet_point", "-")
+
 	_ = viper.ReadInConfig()
 }
 

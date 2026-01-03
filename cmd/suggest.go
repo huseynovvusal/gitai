@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/tui/suggest"
 	"os"
@@ -39,15 +40,23 @@ var suggestCmd = &cobra.Command{
 		defer cancel()
 
 		provStr := viper.GetString("ai.provider")
-		provider, err := ai.ParseProvider(provStr)
+		providerEnum, err := provider.ParseProvider(provStr)
 		if err != nil {
 			cmd.PrintErrln("Invalid provider:", err)
 			return
 		}
 
+		aiProvider, err := provider.NewAIProvider(providerEnum)
+		if err != nil {
+			cmd.PrintErrln("Error creating AI provider:", err)
+			return
+		}
+
+		service := ai.NewService(aiProvider)
+
 		editorMode := viper.GetString("suggest.editor")
 
-		flow := suggest.NewFlow(rootCtx, provider, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor)
+		flow := suggest.NewFlow(rootCtx, service, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor)
 		flow.Run(args)
 	},
 }
@@ -56,9 +65,13 @@ func init() {
 	suggestCmd.Flags().StringP("provider", "p", "", "AI provider to use (gpt|gemini|ollama|geminicli). If empty, uses env or config or default")
 	suggestCmd.Flags().StringP("api_key", "k", "", "Optional API key to provide to AI provider")
 	suggestCmd.Flags().StringP("editor", "e", "system", "Editor to use for commit messages (builtin, system, or command)")
+	suggestCmd.Flags().Float64P("temperature", "t", 0.7, "Temperature for AI generation")
+	suggestCmd.Flags().Int64("max_tokens", 256, "Maximum tokens for AI generation")
 	_ = viper.BindPFlag("ai.provider", suggestCmd.Flags().Lookup("provider"))
 	_ = viper.BindPFlag("ai.api_key", suggestCmd.Flags().Lookup("api_key"))
 	_ = viper.BindPFlag("suggest.editor", suggestCmd.Flags().Lookup("editor"))
+	_ = viper.BindPFlag("ai.temperature", suggestCmd.Flags().Lookup("temperature"))
+	_ = viper.BindPFlag("ai.max_tokens", suggestCmd.Flags().Lookup("max_tokens"))
 	rootCmd.AddCommand(suggestCmd)
 }
 

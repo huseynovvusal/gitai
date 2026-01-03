@@ -66,7 +66,7 @@ type AIMessageModel struct {
 	spinner       spinner.Model
 	errMsg        string
 	cancel        bool
-	provider      ai.Provider
+	generator     ai.CommitMessageGenerator
 	savedDiff     string
 	savedStatus   string
 	ctx           context.Context
@@ -76,7 +76,7 @@ type AIMessageModel struct {
 	pushOutput    string
 }
 
-func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider, editorMode string, hint string) AIMessageModel {
+func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, editorMode string, hint string) AIMessageModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
@@ -95,14 +95,14 @@ func NewAIMessageModel(ctx context.Context, files []string, provider ai.Provider
 		errMsg:        "",
 		cancel:        false,
 		ctx:           ctx,
-		provider:      provider,
+		generator:     generator,
 		editorMode:    editorMode,
 		textArea:      ta,
 		hint:          hint,
 	}
 }
 
-func runAIAsync(ctx context.Context, provider ai.Provider, files []string, hint string) tea.Cmd {
+func runAIAsync(ctx context.Context, generator ai.CommitMessageGenerator, files []string, hint string) tea.Cmd {
 	return func() tea.Msg {
 		diff, err := git.GetChangesForFiles(files)
 		if err != nil {
@@ -114,24 +114,24 @@ func runAIAsync(ctx context.Context, provider ai.Provider, files []string, hint 
 			return aiErrorMsg{err: err}
 		}
 
-		        err = security.CheckDiffSafety(diff)
-				if err != nil {
-					return commitSecurityWarningMsg{err: err, diff: diff, status: status}
-				}
+		err = security.CheckDiffSafety(diff)
+		if err != nil {
+			return commitSecurityWarningMsg{err: err, diff: diff, status: status}
+		}
 
-				commitMessage, err := ai.GenerateCommitMessage(ctx, provider, diff, status, hint)
-				if err != nil {
-					return aiErrorMsg{err: err}
-				}
+		commitMessage, err := generator.Generate(ctx, diff, status, hint)
+		if err != nil {
+			return aiErrorMsg{err: err}
+		}
 		return aiDoneMsg{message: commitMessage}
 	}
 }
 
 // runGenerateAfterWarningAsync resumes commit message generation using the
 // previously saved diff/status after the user confirmed the warning.
-func runGenerateAfterWarningAsync(ctx context.Context, provider ai.Provider, diff, status, hint string) tea.Cmd {
+func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessageGenerator, diff, status, hint string) tea.Cmd {
 	return func() tea.Msg {
-		commitMessage, err := ai.GenerateCommitMessage(ctx, provider, diff, status, hint)
+		commitMessage, err := generator.Generate(ctx, diff, status, hint)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -194,7 +194,7 @@ func openEditor(content string, editorCmd string) tea.Cmd {
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		runAIAsync(m.ctx, m.provider, m.files, m.hint),
+		runAIAsync(m.ctx, m.generator, m.files, m.hint),
 	)
 }
 
@@ -230,7 +230,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateSecurityWarning {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, runGenerateAfterWarningAsync(m.ctx, m.provider, m.savedDiff, m.savedStatus, m.hint)
+				return m, runGenerateAfterWarningAsync(m.ctx, m.generator, m.savedDiff, m.savedStatus, m.hint)
 			}
 		case "n":
 			if m.state == StateSecurityWarning {
@@ -267,7 +267,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateGenerated {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, m.provider, m.files, m.hint))
+				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, m.generator, m.files, m.hint))
 			}
 		}
 	case spinner.TickMsg:
