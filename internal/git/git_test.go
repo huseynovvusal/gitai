@@ -176,7 +176,7 @@ func TestGetChangedFiles(t *testing.T) {
 		{
 			name:            "no changed files",
 			stdout:          "",
-			expected:        nil,
+			expected:        []string{},
 			expectedCmdArgs: []string{"git", "status", "--porcelain"},
 		},
 		{
@@ -398,22 +398,23 @@ func TestPush(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		        t.Run(tc.name, func(t *testing.T) {
-		            command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
-		            defer func() { command = exec.Command }()
-		
-		            _, err := Push()
-		
-		            if err != nil && tc.expectedErr == "" {
-		                t.Fatalf("unexpected error: %v", err)
-		            }
-		            if err == nil && tc.expectedErr != "" {
-		                t.Fatalf("expected error but got none")
-		            }
-		            if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
-		                t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
-		            }
-		        })	}
+		t.Run(tc.name, func(t *testing.T) {
+			command = newMockExecCommand(t, tc.expectedCmdArgs, tc.stdout, tc.stderr, tc.exitCode)
+			defer func() { command = exec.Command }()
+
+			_, err := Push()
+
+			if err != nil && tc.expectedErr == "" {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err == nil && tc.expectedErr != "" {
+				t.Fatalf("expected error but got none")
+			}
+			if err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
+				t.Fatalf("expected error '%s', got '%s'", tc.expectedErr, err.Error())
+			}
+		})
+	}
 }
 
 func TestGetPullRequestURL(t *testing.T) {
@@ -423,12 +424,12 @@ func TestGetPullRequestURL(t *testing.T) {
 	// 2. git remote get-url origin -> returns remote URL
 
 	tests := []struct {
-		name           string
-		mockBranch     string
-		mockRemote     string
-		expectedURL    string
-		expectedErr    string
-		cmdErr         bool // if true, simulates command failure
+		name        string
+		mockBranch  string
+		mockRemote  string
+		expectedURL string
+		expectedErr string
+		cmdErr      bool // if true, simulates command failure
 	}{
 		{
 			name:        "github https",
@@ -467,7 +468,7 @@ func TestGetPullRequestURL(t *testing.T) {
 			callCount := 0
 			command = func(name string, args ...string) *exec.Cmd {
 				callCount++
-				
+
 				var output string
 				if len(args) > 0 && args[0] == "rev-parse" {
 					output = tt.mockBranch
