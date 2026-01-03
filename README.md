@@ -246,4 +246,5 @@ This project is released under the MIT License. See [LICENSE](LICENSE) for detai
 ## 👤 Authors
 
 Vusal Huseynov — original author
+
 Jonathan Artback - contributor 
