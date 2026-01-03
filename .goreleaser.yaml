@@ -1,0 +1,88 @@
+# .goreleaser.yaml
+version: 2
+
+project_name: gitai
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X huseynovvusal/gitai/cmd.Version={{.Version}}
+
+archives:
+  - format: tar.gz
+    # this name template makes the OS and Arch compatible with the results of uname.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+# Configure Homebrew Tap
+brews:
+  - repository:
+      owner: huseynovvusal
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    
+    # The project name and description for the formula.
+    name: gitai
+    homepage: "https://github.com/huseynovvusal/gitai"
+    description: "AI-powered Git Assistant"
+    license: "MIT"
+    
+    # Packages your package depends on.
+    dependencies:
+      - name: git
+    
+    # Tests to run after installation
+    test: |
+      system "#{bin}/gitai --version"
+
+# Configure Linux Packages (DEB/RPM)
+nfpms:
+  - maintainer: "Huseynov Vusal"
+    description: "AI-powered Git Assistant"
+    homepage: "https://github.com/huseynovvusal/gitai"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+    
+    # Dependencies for the linux packages
+    dependencies:
+      - git
+    
+    # Where to put the binary in the linux system
+    # contents:
+    #   - src: ...

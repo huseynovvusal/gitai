@@ -11,10 +11,16 @@ import (
 	"github.com/spf13/viper"
 )
 
+var (
+	// Version is injected at build time
+	Version = "0.1.0"
+)
+
 var rootCmd = &cobra.Command{
-	Use:   "gitai",
-	Short: "Gitai is a CLI tool to interact with Git repositories using AI",
-	Long:  `Gitai allows you to perform various Git operations with the help of AI, making version control easier and more intuitive.`,
+	Use:     "gitai",
+	Version: Version,
+	Short:   "Gitai is a CLI tool to interact with Git repositories using AI",
+	Long:    `Gitai allows you to perform various Git operations with the help of AI, making version control easier and more intuitive.`,
 }
 
 func init() {
