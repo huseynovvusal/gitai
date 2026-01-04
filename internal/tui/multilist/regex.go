@@ -1,8 +1,9 @@
 package multilist
 
 import (
-	"github.com/charmbracelet/bubbles/list"
 	"regexp"
+
+	"github.com/charmbracelet/bubbles/list"
 )
 
 func regexFilter(term string, targets []string) []list.Rank {
@@ -12,6 +13,7 @@ func regexFilter(term string, targets []string) []list.Rank {
 	}
 
 	var ranks []list.Rank
+
 	for i, t := range targets {
 		if re.MatchString(t) {
 			ranks = append(ranks, list.Rank{
@@ -20,6 +22,7 @@ func regexFilter(term string, targets []string) []list.Rank {
 			})
 		}
 	}
+
 	return ranks
 }
 

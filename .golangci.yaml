@@ -1,0 +1,43 @@
+version: 2
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable:
+    - errcheck
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unparam
+    - prealloc
+    - nakedret
+    - copyloopvar
+    - gocritic
+    - bodyclose
+    - contextcheck
+    - nilnil
+    - wrapcheck
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+  wrapcheck:
+    ignorePackageGlobs:
+      - huseynovvusal/gitai/internal/git
+      - huseynovvusal/gitai/internal/ai
+      - huseynovvusal/gitai/internal/security
+      - huseynovvusal/gitai/internal/config
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude:
+    - "err113: do not define dynamic errors"

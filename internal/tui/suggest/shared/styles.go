@@ -14,14 +14,14 @@ var (
 )
 
 var (
-	// Header: prominent, but leave background to the surrounding layout
+	// Header: prominent, but leave background to the surrounding layout.
 	HeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(AccentFg)
-	// Cursor: highlight the pointer with a bright foreground and bold
+	// Cursor: highlight the pointer with a bright foreground and bold.
 	CursorStyle = lipgloss.NewStyle().Foreground(CursorFg).Bold(true)
-	// Checked/File/Error: plain foreground colors, no background so they blend with whatever layout is used
+	// Checked/File/Error: plain foreground colors, no background so they blend with whatever layout is used.
 	CheckedStyle = lipgloss.NewStyle().Foreground(CheckedFg)
 	FileStyle    = lipgloss.NewStyle().Foreground(FileFg)
-	// Selected: keep a distinct background to clearly show selection
+	// Selected: keep a distinct background to clearly show selection.
 	SelectedStyle = lipgloss.NewStyle().Bold(true).Background(SelectedBg).Foreground(BaseFg)
 	ErrorStyle    = lipgloss.NewStyle().Foreground(ErrorFg).Bold(true)
 	DocStyle      = lipgloss.NewStyle().Margin(1, 2)

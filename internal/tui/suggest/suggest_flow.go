@@ -2,16 +2,15 @@ package suggest
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"huseynovvusal/gitai/internal/ai"
 	"regexp"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"huseynovvusal/gitai/internal/ai"
 )
 
-var (
-	LinksRegex = regexp.MustCompile(`remote:\s*(https?://\S+)`)
-)
+var LinksRegex = regexp.MustCompile(`remote:\s*(https?://\S+)`)
 
 type GitRepoStatus interface {
 	GetChangedFiles() ([]string, error)
@@ -35,7 +34,7 @@ type GitCommitter interface {
 	Push(ctx context.Context, remoteName string) (string, error)
 }
 
-// We keep a private combined interface for convenience in Flow but 
+// We keep a private combined interface for convenience in Flow but
 // use the smaller ones where appropriate if we were to pass them around.
 type suggestGitService interface {
 	GitRepoStatus
@@ -70,11 +69,13 @@ func NewFlow(generator ai.CommitMessageGenerator, gs suggestGitService, cfg Flow
 
 func (s *Flow) WithHint(hint string) *Flow {
 	s.hint = hint
+
 	return s
 }
 
 func (s *Flow) WithSkipHint(skip bool) *Flow {
 	s.skipHint = skip
+
 	return s
 }
 
@@ -87,6 +88,7 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 
 	if len(changedFiles) == 0 {
 		println("No changed files to commit.")
+
 		return
 	}
 
@@ -94,6 +96,7 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 	selectedFiles := s.selectFiles(changedFiles, filesFromArgs)
 	if len(selectedFiles) == 0 {
 		println("No valid files selected.")
+
 		return
 	}
 
@@ -124,7 +127,7 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 	}
 }
 
-// selectFiles determines if we filter arguments or show the UI selector
+// selectFiles determines if we filter arguments or show the UI selector.
 func (s *Flow) selectFiles(availableFiles []string, args []string) []string {
 	if len(args) > 0 {
 		// Logic extracted here for testability
@@ -133,6 +136,7 @@ func (s *Flow) selectFiles(availableFiles []string, args []string) []string {
 
 	// Fallback to TUI if no args provided
 	fileSelectorModel := NewFileSelectorModel(availableFiles)
+
 	fileSelectorProgram := tea.NewProgram(&fileSelectorModel)
 	if _, err := fileSelectorProgram.Run(); err != nil {
 		panic(err)
@@ -141,6 +145,7 @@ func (s *Flow) selectFiles(availableFiles []string, args []string) []string {
 	if fileSelectorModel.quitting {
 		return nil
 	}
+
 	return fileSelectorModel.GetSelectedFiles()
 }
 
@@ -158,14 +163,18 @@ func (s *Flow) FilterCompatibleFiles(availableFiles []string, patterns []string)
 		resolvedPaths, err := s.gitService.ResolvePath(arg)
 		if err != nil {
 			fmt.Printf("Warning: error resolving file '%s': %v\n", arg, err)
+
 			continue
 		}
+
 		if len(resolvedPaths) == 0 {
 			fmt.Printf("Warning: '%s' matched no tracked files\n", arg)
+
 			continue
 		}
 
 		foundAnyChange := false
+
 		for _, resolved := range resolvedPaths {
 			if validMap[resolved] {
 				selected = append(selected, resolved)
@@ -181,26 +190,29 @@ func (s *Flow) FilterCompatibleFiles(availableFiles []string, patterns []string)
 	return uniqueStrings(selected)
 }
 
-// runHintInput isolates the TUI logic for hints
+// runHintInput isolates the TUI logic for hints.
 func (s *Flow) runHintInput() (string, error) {
 	hintInputModel := NewHintInputModel(s.hintProcessors...)
+
 	hintInputProgram := tea.NewProgram(&hintInputModel)
 	if _, err := hintInputProgram.Run(); err != nil {
-		return "", err
+		return "", fmt.Errorf("error running hint input: %w", err)
 	}
 
 	if hintInputModel.quitting {
-		return "", fmt.Errorf("canceled")
+		return "", errors.New("canceled")
 	}
+
 	return hintInputModel.GetHint(), nil
 }
 
-// printPullRequestInfo handles the output parsing for PR links
+// printPullRequestInfo handles the output parsing for PR links.
 func (s *Flow) printPullRequestInfo(pushOutput string) {
 	// Preferred: Git config
 	prURL, err := s.gitService.GetPullRequestURL("origin")
 	if err == nil && prURL != "" {
 		fmt.Printf("\nCreate a Pull Request: %s\n", prURL)
+
 		return
 	}
 
@@ -209,6 +221,7 @@ func (s *Flow) printPullRequestInfo(pushOutput string) {
 	if len(matches) > 0 {
 		fmt.Println()
 	}
+
 	for _, match := range matches {
 		if len(match) > 1 {
 			fmt.Printf("Create a Pull Request: %s\n", match[1])
@@ -218,12 +231,16 @@ func (s *Flow) printPullRequestInfo(pushOutput string) {
 
 func uniqueStrings(slice []string) []string {
 	keys := make(map[string]bool)
+
 	list := make([]string, 0, len(slice))
+
 	for _, entry := range slice {
 		if _, value := keys[entry]; !value {
 			keys[entry] = true
+
 			list = append(list, entry)
 		}
 	}
+
 	return list
 }

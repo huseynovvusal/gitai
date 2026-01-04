@@ -2,6 +2,8 @@ package ai
 
 import (
 	"context"
+	"fmt"
+
 	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/cleaner"
 )
@@ -31,14 +33,17 @@ func (s *Service) Generate(ctx context.Context, diff string, status string, hint
 	if version != "" {
 		userMessage += "\n\nVersion update detected: " + version + "\nInstruction: Follow the 'chore(release)' format mentioned in the system prompt."
 	}
+
 	if hint != "" {
 		userMessage += "\n\nUser context/instruction: " + hint
 	}
+
 	userMessage = compressWhitespace(userMessage)
 	systemMessage = compressWhitespace(systemMessage)
+
 	msg, err := s.provider.GenerateContent(ctx, systemMessage, userMessage)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to generate commit message: %w", err)
 	}
 
 	return cleaner.CleanCommitMessage(msg, s.bulletPoint), nil

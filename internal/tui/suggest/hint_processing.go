@@ -24,6 +24,7 @@ func JiraHintProcessor(input string) string {
 	if matches := jiraRegex.FindStringSubmatch(input); len(matches) > 1 {
 		ticketID := matches[1]
 		instruction := fmt.Sprintf("Ticket: %s. The commit message header must be in the format: <type>(<scope>): %s <description>", ticketID, ticketID)
+
 		return fmt.Sprintf("%s\n%s", input, instruction)
 	}
 
@@ -40,9 +41,9 @@ func GitHubHintProcessor(input string) string {
 	if matches := githubRegex.FindStringSubmatch(input); len(matches) > 1 {
 		ticketID := "#" + matches[1]
 		instruction := fmt.Sprintf("Ticket: %s. The commit message header must be in the format: <type>(<scope>): %s <description>", ticketID, ticketID)
+
 		return fmt.Sprintf("%s\n%s", input, instruction)
 	}
 
 	return input
 }
-

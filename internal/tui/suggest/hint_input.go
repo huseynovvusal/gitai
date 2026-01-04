@@ -2,10 +2,11 @@ package suggest
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
-	"strings"
 )
 
 type HintInputModel struct {
@@ -36,7 +37,6 @@ func NewHintInputModel(processors ...HintProcessor) HintInputModel {
 
 		processors: processors,
 	}
-
 }
 
 func (m *HintInputModel) Init() tea.Cmd {
@@ -44,21 +44,24 @@ func (m *HintInputModel) Init() tea.Cmd {
 }
 
 func (m *HintInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.Type {
 		case tea.KeyEnter:
 			m.hint = m.textInput.Value()
 			m.done = true
+
 			return m, tea.Quit
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.quitting = true
+
 			return m, tea.Quit
 		}
 	}
 
 	var cmd tea.Cmd
+
 	m.textInput, cmd = m.textInput.Update(msg)
+
 	return m, cmd
 }
 
@@ -66,15 +69,20 @@ func (m *HintInputModel) View() string {
 	if m.quitting {
 		return ""
 	}
+
 	if m.done {
 		var b strings.Builder
+
 		header := shared.HeaderStyle.Render("Hint provided:")
 		b.WriteString("\n" + header + "\n")
+
 		val := m.hint
 		if val == "" {
 			val = "(none)"
 		}
+
 		b.WriteString(val + "\n")
+
 		return b.String()
 	}
 
@@ -91,5 +99,6 @@ func (m *HintInputModel) GetHint() string {
 	for _, p := range m.processors {
 		val = p(val)
 	}
+
 	return val
 }

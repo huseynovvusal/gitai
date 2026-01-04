@@ -15,6 +15,7 @@ import (
 
 func setupTestRepo(t *testing.T) (string, *git.Repository) {
 	t.Helper()
+
 	tempDir, err := os.MkdirTemp("", "gitai-test")
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +34,8 @@ func setupTestRepo(t *testing.T) (string, *git.Repository) {
 
 	// Create initial commit to ensure 'master' branch exists
 	w, _ := r.Worktree()
-	os.WriteFile(filepath.Join(tempDir, "README.md"), []byte("# Test Repo"), 0644)
+
+	os.WriteFile(filepath.Join(tempDir, "README.md"), []byte("# Test Repo"), 0o644)
 	w.Add("README.md")
 	w.Commit("initial commit", &git.CommitOptions{
 		Author: &object.Signature{Name: "Test User", Email: "test@example.com", When: time.Now()},
@@ -48,6 +50,7 @@ func TestGetGitRoot(t *testing.T) {
 
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(dir)
 
 	root, err := GetGitRoot()
@@ -56,7 +59,9 @@ func TestGetGitRoot(t *testing.T) {
 	}
 
 	r1, _ := filepath.EvalSymlinks(root)
+
 	d1, _ := filepath.EvalSymlinks(dir)
+
 	if r1 != d1 {
 		t.Errorf("expected root %s, got %s", dir, root)
 	}
@@ -71,12 +76,14 @@ func TestGetGitRoot_NotFound(t *testing.T) {
 
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(tempDir)
 
 	_, err = GetGitRoot()
 	if err == nil {
 		t.Error("expected error when not in a git repository, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "not a git repository") {
 		t.Errorf("expected 'not a git repository' error, got: %v", err)
 	}
@@ -86,6 +93,7 @@ func TestFindGitRoot(t *testing.T) {
 	// 1. Valid git repo
 	dir, _ := setupTestRepo(t)
 	defer os.RemoveAll(dir)
+
 	root, err := findGitRoot(dir)
 	if err != nil || root == "" {
 		t.Errorf("findGitRoot failed on valid dir: %v", err)
@@ -94,6 +102,7 @@ func TestFindGitRoot(t *testing.T) {
 	// 2. Not a git repo
 	tempDir, _ := os.MkdirTemp("", "gitroot-fail")
 	defer os.RemoveAll(tempDir)
+
 	_, err = findGitRoot(tempDir)
 	if err == nil {
 		t.Error("expected error for non-git dir")
@@ -109,13 +118,16 @@ func TestFindGitRoot(t *testing.T) {
 func TestGetChangedFiles(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
+
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(dir)
 
 	gs := NewService()
 	w, _ := wRepo.Worktree()
-	os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("content1"), 0644)
+
+	os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("content1"), 0o644)
 
 	files, _ := gs.GetChangedFiles()
 	if len(files) != 1 || files[0] != "file1.txt" {
@@ -136,48 +148,62 @@ func TestGetChangedFiles(t *testing.T) {
 func TestCommit(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
+
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(dir)
 
 	gs := NewService()
 
 	// 1. Add/Commit
-	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
-	if err := gs.Commit([]string{"main.go"}, "Add main"); err != nil {
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0o644)
+
+	err := gs.Commit([]string{"main.go"}, "Add main")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Delete/Commit
 	os.Remove(filepath.Join(dir, "main.go"))
-	if err := gs.Commit([]string{"main.go"}, "Delete main"); err != nil {
+
+	err = gs.Commit([]string{"main.go"}, "Delete main")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Rename/Commit
-	os.WriteFile(filepath.Join(dir, "old.txt"), []byte("content"), 0644)
+	os.WriteFile(filepath.Join(dir, "old.txt"), []byte("content"), 0o644)
 	gs.Commit([]string{"old.txt"}, "Add old")
 	os.Rename(filepath.Join(dir, "old.txt"), filepath.Join(dir, "new.txt"))
-	if err := gs.Commit([]string{"old.txt", "new.txt"}, "Rename"); err != nil {
+
+	err = gs.Commit([]string{"old.txt", "new.txt"}, "Rename")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	head, _ := wRepo.Head()
 	iter, _ := wRepo.Log(&git.LogOptions{From: head.Hash()})
+
 	var messages []string
+
 	iter.ForEach(func(c *object.Commit) error {
 		messages = append(messages, c.Message)
+
 		return nil
 	})
 
 	for _, msg := range []string{"Rename", "Add old", "Delete main", "Add main"} {
 		found := false
+
 		for _, m := range messages {
 			if strings.Contains(m, msg) {
 				found = true
+
 				break
 			}
 		}
+
 		if !found {
 			t.Errorf("missing commit message: %s", msg)
 		}
@@ -187,14 +213,17 @@ func TestCommit(t *testing.T) {
 func TestGetChangesForFiles(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
+
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(dir)
-	
+
 	gs := NewService()
 	w, _ := wRepo.Worktree()
 
-	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello"), 0644)
+	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello"), 0o644)
+
 	diff, _ := gs.GetChangesForFiles([]string{"new.txt"})
 	if !strings.Contains(diff, "new file") {
 		t.Error("expected new file diff")
@@ -205,7 +234,8 @@ func TestGetChangesForFiles(t *testing.T) {
 		Author: &object.Signature{Name: "Me", Email: "me@me.com", When: time.Now()},
 	})
 
-	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello world"), 0644)
+	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello world"), 0o644)
+
 	diff, _ = gs.GetChangesForFiles([]string{"new.txt"})
 	if !strings.Contains(diff, "hello") || !strings.Contains(diff, "world") {
 		t.Errorf("diff missing expected content: %s", diff)
@@ -215,17 +245,21 @@ func TestGetChangesForFiles(t *testing.T) {
 func TestGetStatusForFiles(t *testing.T) {
 	dir, _ := setupTestRepo(t)
 	defer os.RemoveAll(dir)
+
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(dir)
 
 	gs := NewService()
 
-	os.WriteFile(filepath.Join(dir, "status.txt"), []byte("data"), 0644)
+	os.WriteFile(filepath.Join(dir, "status.txt"), []byte("data"), 0o644)
+
 	status, err := gs.GetStatusForFiles([]string{"status.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !strings.Contains(status, "?? status.txt") {
 		t.Errorf("expected untracked status, got: %q", status)
 	}
@@ -234,17 +268,19 @@ func TestGetStatusForFiles(t *testing.T) {
 func TestResolvePath(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
+
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(dir)
-	
+
 	gs := NewService()
 	w, _ := wRepo.Worktree()
 
-	os.Mkdir(filepath.Join(dir, "subdir"), 0755)
-	os.WriteFile(filepath.Join(dir, "subdir/a.txt"), []byte("a"), 0644)
-	os.WriteFile(filepath.Join(dir, "subdir/b.txt"), []byte("b"), 0644)
-	os.WriteFile(filepath.Join(dir, "root.txt"), []byte("root"), 0644)
+	os.Mkdir(filepath.Join(dir, "subdir"), 0o755)
+	os.WriteFile(filepath.Join(dir, "subdir/a.txt"), []byte("a"), 0o644)
+	os.WriteFile(filepath.Join(dir, "subdir/b.txt"), []byte("b"), 0o644)
+	os.WriteFile(filepath.Join(dir, "root.txt"), []byte("root"), 0o644)
 
 	w.Add("subdir/a.txt")
 	w.Commit("init", &git.CommitOptions{
@@ -268,9 +304,11 @@ func TestResolvePath(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			if len(results) != len(tt.expected) {
 				t.Fatalf("expected %v, got %v", tt.expected, results)
 			}
+
 			for i, r := range results {
 				if r != tt.expected[i] {
 					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], r)
@@ -283,8 +321,10 @@ func TestResolvePath(t *testing.T) {
 func TestGetPullRequestURL(t *testing.T) {
 	dir, r := setupTestRepo(t)
 	defer os.RemoveAll(dir)
+
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(dir)
 
 	gs := NewService()
@@ -311,6 +351,7 @@ func TestGetPullRequestURL(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			if url != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, url)
 			}
@@ -323,7 +364,9 @@ func TestPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	defer os.RemoveAll(remoteDir)
+
 	_, err = git.PlainInit(remoteDir, true)
 	if err != nil {
 		t.Fatal(err)
@@ -334,6 +377,7 @@ func TestPush(t *testing.T) {
 
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
+
 	os.Chdir(localDir)
 
 	ctx := context.Background()
@@ -351,11 +395,13 @@ func TestPush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Push failed: %v", err)
 	}
+
 	if !strings.Contains(out, "Push successful") {
 		t.Errorf("unexpected push output: %s", out)
 	}
 
 	remoteRepo, _ := git.PlainOpen(remoteDir)
+
 	_, err = remoteRepo.Head()
 	if err != nil {
 		t.Errorf("remote repo has no HEAD after push: %v", err)

@@ -2,17 +2,17 @@ package cmd
 
 import (
 	"context"
-	"huseynovvusal/gitai/internal/ai"
-	"huseynovvusal/gitai/internal/ai/provider"
-	"huseynovvusal/gitai/internal/config"
-	"huseynovvusal/gitai/internal/git"
-	"huseynovvusal/gitai/internal/tui/suggest"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/ai/provider"
+	"huseynovvusal/gitai/internal/config"
+	"huseynovvusal/gitai/internal/git"
+	"huseynovvusal/gitai/internal/tui/suggest"
 )
 
 var suggestCmd = &cobra.Command{
@@ -44,12 +44,14 @@ var suggestCmd = &cobra.Command{
 		cfg, err := config.LoadConfig(viper.GetViper())
 		if err != nil {
 			cmd.PrintErrln("Error loading config:", err)
+
 			return
 		}
 
 		providerEnum, err := provider.ParseProvider(cfg.AI.Provider)
 		if err != nil {
 			cmd.PrintErrln("Invalid provider:", err)
+
 			return
 		}
 
@@ -61,6 +63,7 @@ var suggestCmd = &cobra.Command{
 		})
 		if err != nil {
 			cmd.PrintErrln("Error creating AI provider:", err)
+
 			return
 		}
 
@@ -97,7 +100,6 @@ func init() {
 	_ = viper.BindPFlag("suggest.hint", suggestCmd.Flags().Lookup("hint"))
 	_ = viper.BindPFlag("suggest.no-hint", suggestCmd.Flags().Lookup("no-hint"))
 
-	rootCmd.AddCommand(suggestCmd)
 }
 
 type gitService interface {
@@ -106,6 +108,7 @@ type gitService interface {
 
 func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string, gs gitService) []string {
 	selectedSet := make(map[string]bool)
+
 	for _, arg := range selectedArgs {
 		if resolved, err := gs.ResolvePath(arg); err == nil {
 			for _, r := range resolved {
@@ -114,7 +117,8 @@ func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFil
 		}
 	}
 
-	var suggestions []string
+	suggestions := make([]string, 0, len(changedFiles))
+
 	for _, f := range changedFiles {
 		if selectedSet[f] {
 			continue
@@ -128,7 +132,9 @@ func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFil
 		if strings.HasPrefix(toComplete, "./") && !strings.HasPrefix(relPath, "./") && !strings.HasPrefix(relPath, "..") {
 			relPath = "./" + relPath
 		}
+
 		suggestions = append(suggestions, relPath)
 	}
+
 	return suggestions
 }

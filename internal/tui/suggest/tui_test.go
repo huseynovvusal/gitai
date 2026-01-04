@@ -38,21 +38,27 @@ func (m *mockGitService) GetVersion() (string, error) {
 func (m *mockGitService) GetStatusForFiles(_ []string) (string, error) {
 	return m.statusResponse, nil
 }
+
 func (m *mockGitService) GetChangedFiles() ([]string, error) {
 	return m.changedFiles, nil
 }
+
 func (m *mockGitService) GetChangesForFiles(_ []string) (string, error) {
 	return m.changesResponse, nil
 }
+
 func (m *mockGitService) Commit(_ []string, _ string) error {
 	return m.commitErr
 }
+
 func (m *mockGitService) Push(_ context.Context, _ string) (string, error) {
 	return m.pushResponse, nil
 }
+
 func (m *mockGitService) ResolvePath(_ string) ([]string, error) {
 	return m.resolveResponse, nil
 }
+
 func (m *mockGitService) GetPullRequestURL(_ string) (string, error) {
 	return m.prURL, nil
 }
@@ -70,6 +76,7 @@ func TestFileSelectorModel(t *testing.T) {
 
 	// 2. Select All
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
 	m = *m2.(*FileSelectorModel)
 	if len(m.GetSelectedFiles()) != 2 {
 		t.Errorf("expected 2 selected files, got %d", len(m.GetSelectedFiles()))
@@ -77,6 +84,7 @@ func TestFileSelectorModel(t *testing.T) {
 
 	// 3. Confirm (Enter)
 	m3, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
 	m = *m3.(*FileSelectorModel)
 	if !m.done {
 		t.Error("expected model to be done after Enter")
@@ -122,6 +130,7 @@ func TestHintInputModel(t *testing.T) {
 	if !m.done {
 		t.Error("expected model to be done after Enter")
 	}
+
 	if m.GetHint() != "fix" {
 		t.Errorf("expected hint 'fix', got %q", m.GetHint())
 	}
@@ -134,6 +143,7 @@ func TestHintInputModel(t *testing.T) {
 	// 6. Escape/Quit
 	m = NewHintInputModel()
 	m4, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
 	m = *m4.(*HintInputModel)
 	if !m.quitting || m.View() != "" {
 		t.Error("expected empty view on quit")
@@ -153,56 +163,67 @@ func TestAIMessageModel_States(t *testing.T) {
 	if m.state != StateGenerating {
 		t.Errorf("expected StateGenerating, got %v", m.state)
 	}
+
 	if !strings.Contains(m.View(), "Generating") {
 		t.Error("expected generating view")
 	}
 
 	// 2. Receive AI response
 	m2, _ := m.Update(aiDoneMsg{message: "feat: add tests"})
+
 	m = *m2.(*AIMessageModel)
 	if m.state != StateGenerated || m.commitMessage != "feat: add tests" {
 		t.Errorf("state mismatch after aiDoneMsg: %v", m.state)
 	}
+
 	if !strings.Contains(m.View(), "AI commit message suggestion") {
 		t.Error("expected generated view")
 	}
 
 	// 3. Start Commit (Press 'c')
 	m3, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
 	m = *m3.(*AIMessageModel)
 	if m.state != StateCommitting {
 		t.Error("expected StateCommitting after 'c'")
 	}
+
 	if !strings.Contains(m.View(), "Committing") {
 		t.Error("expected committing view")
 	}
 
 	// 4. Commit Success
 	m4, _ := m.Update(commitResultMsg{err: nil})
+
 	m = *m4.(*AIMessageModel)
 	if m.state != StateCommitted {
 		t.Error("expected StateCommitted after success")
 	}
+
 	if !strings.Contains(m.View(), "Committed successfully") {
 		t.Error("expected committed view")
 	}
 
 	// 5. Start Push (Press 'p')
 	m5, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+
 	m = *m5.(*AIMessageModel)
 	if m.state != StatePushing {
 		t.Error("expected StatePushing after 'p'")
 	}
+
 	if !strings.Contains(m.View(), "Pushing") {
 		t.Error("expected pushing view")
 	}
 
 	// 6. Push Success
 	m6, _ := m.Update(pushResultMsg{output: "pushed", err: nil})
+
 	m = *m6.(*AIMessageModel)
 	if m.state != StatePushed {
 		t.Error("expected StatePushed after success")
 	}
+
 	if !strings.Contains(m.View(), "Pushed successfully") {
 		t.Error("expected pushed view")
 	}
@@ -218,6 +239,7 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 
 	// 1. AI Error
 	m2, _ := m.Update(aiErrorMsg{err: context.DeadlineExceeded})
+
 	m = *m2.(*AIMessageModel)
 	if m.state != StateError || !strings.Contains(m.View(), "Commit failed") {
 		t.Error("expected error state and view")
@@ -229,6 +251,7 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 		SecurityKeywords: []string{"secret"},
 	}, "")
 	m3, _ := m.Update(commitSecurityWarningMsg{err: context.Canceled, diff: "diff", status: "status"})
+
 	m = *m3.(*AIMessageModel)
 	if m.state != StateSecurityWarning || !strings.Contains(m.View(), "potential sensitive data") {
 		t.Error("expected security warning state and view")
@@ -236,6 +259,7 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 
 	// 3. Confirm Security Warning (Yes)
 	m4, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
 	m = *m4.(*AIMessageModel)
 	if m.state != StateGenerating {
 		t.Error("expected generating state after confirming security")
@@ -248,6 +272,7 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 	}, "")
 	m.state = StateSecurityWarning
 	m5, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+
 	m = *m5.(*AIMessageModel)
 	if m.state != StateError {
 		t.Error("expected error state after denying security")
@@ -266,6 +291,7 @@ func TestAIMessageModel_Editing(t *testing.T) {
 
 	// 1. Press 'e' to edit
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
 	m = *m2.(*AIMessageModel)
 	if m.state != StateEditing {
 		t.Error("expected StateEditing")
@@ -276,6 +302,7 @@ func TestAIMessageModel_Editing(t *testing.T) {
 
 	// 3. Save (Ctrl+S)
 	m3, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+
 	m = *m3.(*AIMessageModel)
 	if m.state != StateGenerated || m.commitMessage != "new message" {
 		t.Errorf("failed to save edit: state=%v, msg=%s", m.state, m.commitMessage)
@@ -287,6 +314,7 @@ func TestFlow_Options(t *testing.T) {
 		EditorMode: "builtin",
 	})
 	f.WithHint("myhint").WithSkipHint(true)
+
 	if f.hint != "myhint" || !f.skipHint {
 		t.Error("failed to set flow options")
 	}
@@ -302,6 +330,7 @@ func TestFlow_PrintPullRequestInfo(t *testing.T) {
 	f.printPullRequestInfo("remote: https://github.com/pr/2")
 
 	gs.prURL = ""
+
 	f.printPullRequestInfo("remote: https://github.com/pr/2")
 }
 
@@ -323,18 +352,22 @@ func TestFilterCompatibleFiles(t *testing.T) {
 
 	// Non-existent
 	gs.resolveResponse = nil
+
 	res = f.FilterCompatibleFiles(available, []string{"nonexistent.go"})
 	if len(res) != 0 {
 		t.Errorf("expected empty, got %v", res)
 	}
 }
+
 func TestUniqueStrings(t *testing.T) {
 	input := []string{"a", "b", "a", "c", "b"}
 	expected := []string{"a", "b", "c"}
+
 	res := uniqueStrings(input)
 	if len(res) != 3 {
 		t.Fatalf("expected 3, got %d", len(res))
 	}
+
 	for i, v := range expected {
 		if res[i] != v {
 			t.Errorf("at %d: expected %s, got %s", i, v, res[i])

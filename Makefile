@@ -13,7 +13,7 @@ test:
 	go test ./...
 
 lint:
-	golangci-lint run
+	golangci-lint run -D errcheck
 
 clean:
 	rm -f bin/$(BINARY_NAME)

@@ -14,6 +14,7 @@ func TestModel(t *testing.T) {
 	if len(m.List.Items()) != 3 {
 		t.Errorf("expected 3 items, got %d", len(m.List.Items()))
 	}
+
 	if len(m.GetSelected()) != 0 {
 		t.Errorf("expected 0 selected items, got %d", len(m.GetSelected()))
 	}
@@ -21,6 +22,7 @@ func TestModel(t *testing.T) {
 	// 2. Toggle First Item (file1.go)
 	// Bubble Tea testing: send a space key message
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+
 	selected := m.GetSelected()
 	if len(selected) != 1 || selected[0] != "file1.go" {
 		t.Errorf("expected [file1.go], got %v", selected)
@@ -51,7 +53,7 @@ func TestModel_Filtering(t *testing.T) {
 
 	// Enter filtering mode
 	m.List.SetFilterState(1) // list.Filtering
-	
+
 	// Sending 'a' should NOT toggle all when filtering
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if len(m.GetSelected()) != 0 {

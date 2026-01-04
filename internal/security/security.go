@@ -10,46 +10,51 @@ import (
 	"github.com/sourcegraph/go-diff/diff"
 )
 
+// Finding represents a security match in a diff.
 type Finding struct {
 	File string
 	Line int
 	Text string
 }
 
+// CheckDiffSafety scans a diff for sensitive keywords in added lines.
 func CheckDiffSafety(diffText string, keywords []string) error {
 	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse diff: %w", err)
 	}
 
 	var findings []Finding
-	for _, fd := range fileDiffs {
-		filename := strings.TrimPrefix(fd.NewName, "b/")
+
+	for _, fileDiff := range fileDiffs {
+		// Normalize filename
+		filename := strings.TrimPrefix(fileDiff.NewName, "b/")
 		filename = strings.TrimPrefix(filename, "a/")
 
-		for _, h := range fd.Hunks {
-			lines := strings.Split(string(h.Body), "\n")
-			newLine := int(h.NewStartLine)
+		for _, hunk := range fileDiff.Hunks {
+			lines := strings.Split(string(hunk.Body), "\n")
+			newLineNum := int(hunk.NewStartLine)
 
-			for _, ln := range lines {
-				if ln == "" {
+			for _, line := range lines {
+				if line == "" {
 					continue
 				}
 
-				switch ln[0] {
+				switch line[0] {
 				case '+':
-					text := strings.TrimPrefix(ln, "+")
-					if containsKeyword(text, keywords) {
-						findings = append(findings, Finding{File: filename, Line: newLine, Text: strings.TrimSpace(text)})
+					content := line[1:]
+					if containsKeyword(content, keywords) {
+						findings = append(findings, Finding{
+							File: filename,
+							Line: newLineNum,
+							Text: strings.TrimSpace(content),
+						})
 					}
-					newLine++
+					newLineNum++
 				case ' ':
-					// context line advances new file line number
-					newLine++
+					newLineNum++
 				case '-':
-					// removed line; does not advance new file line number
-				default:
-					// unknown prefix - ignore
+					// Removed line
 				}
 			}
 		}
@@ -59,26 +64,30 @@ func CheckDiffSafety(diffText string, keywords []string) error {
 		return nil
 	}
 
-	var b strings.Builder
-	cwd, _ := os.Getwd()
-	for _, f := range findings {
-		abs := f.File
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(cwd, abs)
-		}
-		// create file:// URI with an encoded path so terminals like VS Code treat it as a clickable link
-		u := url.URL{Scheme: "file", Path: abs}
-		fileURI := u.String()
-		b.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", fileURI, f.Line, f.Text))
-	}
-
-	return fmt.Errorf("%s", b.String())
+	return formatFindings(findings)
 }
 
-func containsKeyword(s string, keywords []string) bool {
-	ls := strings.ToLower(s)
+func formatFindings(findings []Finding) error {
+	var builder strings.Builder
+	currentDir, _ := os.Getwd()
+
+	for _, find := range findings {
+		absPath := find.File
+		if !filepath.IsAbs(absPath) {
+			absPath = filepath.Join(currentDir, absPath)
+		}
+		// Create file:// URI for clickable terminal links
+		fileURL := url.URL{Scheme: "file", Path: absPath}
+		builder.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", fileURL.String(), find.Line, find.Text))
+	}
+
+	return fmt.Errorf("sensitive data found:\n%s", builder.String())
+}
+
+func containsKeyword(line string, keywords []string) bool {
+	lowerLine := strings.ToLower(line)
 	for _, kw := range keywords {
-		if strings.Contains(ls, kw) {
+		if strings.Contains(lowerLine, strings.ToLower(kw)) {
 			return true
 		}
 	}

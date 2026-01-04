@@ -64,17 +64,18 @@ func normalizeBulletPoints(text string, bullet string) string {
 		if strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "• ") || strings.HasPrefix(trimmed, "- ") {
 			// Find where the content starts (skip the bullet marker)
 			content := ""
-			if strings.HasPrefix(trimmed, "* ") {
-				content = strings.TrimPrefix(trimmed, "* ")
-			} else if strings.HasPrefix(trimmed, "• ") {
-				content = strings.TrimPrefix(trimmed, "• ")
-			} else if strings.HasPrefix(trimmed, "- ") {
-				content = strings.TrimPrefix(trimmed, "- ")
+			if after, ok := strings.CutPrefix(trimmed, "* "); ok {
+				content = after
+			} else if after, ok := strings.CutPrefix(trimmed, "• "); ok {
+				content = after
+			} else if after, ok := strings.CutPrefix(trimmed, "- "); ok {
+				content = after
 			}
-			
+
 			// Reconstruct line
 			lines[i] = fmt.Sprintf("%s %s", bullet, content)
 		}
 	}
+
 	return strings.Join(lines, "\n")
 }

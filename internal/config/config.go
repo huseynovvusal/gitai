@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,13 +43,16 @@ func LoadConfig(v *viper.Viper) (*Config, error) {
 	v.SetConfigName("gitai")
 
 	v.AddConfigPath("/etc/gitai/")
+
 	if home, err := os.UserHomeDir(); err == nil {
 		v.AddConfigPath(filepath.Join(home, ".config", "gitai"))
 		v.AddConfigPath(filepath.Join(home, ".gitai"))
 	}
+
 	if gitRoot, err := git.GetGitRoot(); err == nil {
 		v.AddConfigPath(gitRoot)
 	}
+
 	v.AddConfigPath(".")
 
 	v.SetEnvPrefix("gitai")
@@ -78,8 +82,9 @@ func LoadConfig(v *viper.Viper) (*Config, error) {
 	_ = v.ReadInConfig()
 
 	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, err
+	err := v.Unmarshal(&cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	// Post-process security keywords to handle CSV in environment variables
@@ -93,12 +98,15 @@ func LoadConfig(v *viper.Viper) (*Config, error) {
 
 func ParseKeywordsCSV(csv string) []string {
 	parts := strings.Split(csv, ",")
+
 	out := make([]string, 0, len(parts))
+
 	for _, p := range parts {
 		p = strings.ToLower(strings.TrimSpace(p))
 		if p != "" {
 			out = append(out, p)
 		}
 	}
+
 	return out
 }

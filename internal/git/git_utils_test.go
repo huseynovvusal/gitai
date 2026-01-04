@@ -79,6 +79,7 @@ func TestResolveAuth(t *testing.T) {
 				if result != nil {
 					t.Errorf("resolveAuth(%q) expected nil, got %v", tt.url, result)
 				}
+
 				if err != nil {
 					t.Errorf("resolveAuth(%q) expected no error, got %v", tt.url, err)
 				}
@@ -106,6 +107,7 @@ func TestResolveAuth_Callback(t *testing.T) {
 	}
 
 	t.Setenv("SSH_AUTH_SOCK", "/tmp/non-existent-sock")
+
 	_, _ = pkc.Callback()
 }
 
@@ -156,6 +158,7 @@ func TestGenerateDiffString(t *testing.T) {
 					t.Errorf("Expected result to contain %q\nResult:\n%s", s, result)
 				}
 			}
+
 			if strings.Contains(result, "%0A") || strings.Contains(result, "%7B") {
 				t.Errorf("Result contains URL encoded characters: %s", result)
 			}
@@ -166,10 +169,12 @@ func TestGenerateDiffString(t *testing.T) {
 func TestUniqueStrings(t *testing.T) {
 	input := []string{"a", "b", "a", "c", "b"}
 	expected := []string{"a", "b", "c"}
+
 	res := uniqueStrings(input)
 	if len(res) != 3 {
 		t.Fatalf("expected 3, got %d", len(res))
 	}
+
 	for i, v := range expected {
 		if res[i] != v {
 			t.Errorf("at %d: expected %s, got %s", i, v, res[i])
@@ -225,13 +230,8 @@ new file mode 100644
 			expected: "0.1.0 -> 0.2.0",
 		},
 		{
-			name: "composer.json update (PHP)",
-			diff: `diff --git b/composer.json b/composer.json
---- a/composer.json
-+++ b/composer.json
-@@ -2,1 +2,1 @@
--    "version": "1.0.0",
-+    "version": "1.1.0",`,
+			name:     "composer.json update (PHP)",
+			diff:     "diff --git b/composer.json --- a/composer.json\n+++ b/composer.json\n@@ -2,1 +2,1 @@\n-    \"version\": \"1.0.0\",\n+    \"version\": \"1.1.0\",",
 			expected: "1.0.0 -> 1.1.0",
 		},
 		{
@@ -273,12 +273,16 @@ new file mode 100644
 
 func uniqueStrings(slice []string) []string {
 	keys := make(map[string]bool)
+
 	list := make([]string, 0, len(slice))
+
 	for _, entry := range slice {
 		if _, value := keys[entry]; !value {
 			keys[entry] = true
+
 			list = append(list, entry)
 		}
 	}
+
 	return list
 }
