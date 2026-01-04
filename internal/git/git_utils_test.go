@@ -105,8 +105,6 @@ func TestResolveAuth_Callback(t *testing.T) {
 		t.Fatal("expected *gitssh.PublicKeysCallback")
 	}
 
-	// We don't care about the result, just that it executes.
-	// We set a fake SSH_AUTH_SOCK to hit that path too.
 	t.Setenv("SSH_AUTH_SOCK", "/tmp/non-existent-sock")
 	_, _ = pkc.Callback()
 }
@@ -158,6 +156,35 @@ func TestGenerateDiffString(t *testing.T) {
 					t.Errorf("Expected result to contain %q\nResult:\n%s", s, result)
 				}
 			}
+			if strings.Contains(result, "%0A") || strings.Contains(result, "%7B") {
+				t.Errorf("Result contains URL encoded characters: %s", result)
+			}
 		})
 	}
+}
+
+func TestUniqueStrings(t *testing.T) {
+	input := []string{"a", "b", "a", "c", "b"}
+	expected := []string{"a", "b", "c"}
+	res := uniqueStrings(input)
+	if len(res) != 3 {
+		t.Fatalf("expected 3, got %d", len(res))
+	}
+	for i, v := range expected {
+		if res[i] != v {
+			t.Errorf("at %d: expected %s, got %s", i, v, res[i])
+		}
+	}
+}
+
+func uniqueStrings(slice []string) []string {
+	keys := make(map[string]bool)
+	list := make([]string, 0, len(slice))
+	for _, entry := range slice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }

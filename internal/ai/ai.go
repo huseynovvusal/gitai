@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"github.com/spf13/viper"
 	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/cleaner"
 )
@@ -14,12 +13,16 @@ type CommitMessageGenerator interface {
 
 // Service implements CommitMessageGenerator using an AIProvider.
 type Service struct {
-	provider provider.AIProvider
+	provider    provider.AIProvider
+	bulletPoint string
 }
 
 // NewService creates a new Service.
-func NewService(provider provider.AIProvider) *Service {
-	return &Service{provider: provider}
+func NewService(provider provider.AIProvider, bulletPoint string) *Service {
+	return &Service{
+		provider:    provider,
+		bulletPoint: bulletPoint,
+	}
 }
 
 // Generate generates a commit message.
@@ -35,6 +38,5 @@ func (s *Service) Generate(ctx context.Context, diff string, status string, hint
 		return "", err
 	}
 
-	bullet := viper.GetString("suggest.bullet_point")
-	return cleaner.CleanCommitMessage(msg, bullet), nil
+	return cleaner.CleanCommitMessage(msg, s.bulletPoint), nil
 }

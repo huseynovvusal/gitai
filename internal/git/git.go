@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -22,8 +24,271 @@ import (
 // ErrOutsideRepo is returned when a provided path is not within the git repository.
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
-// resolveAuth attempts to find a suitable authentication method for the given URL.
-// It supports SSH agent and local private key files in ~/.ssh.
+// GitService provides methods for interacting with a Git repository.
+type GitService struct{}
+
+// NewGitService creates a new GitService instance.
+func NewGitService() *GitService {
+	return &GitService{}
+}
+
+// GetStatusForFiles returns the porcelain status of the specified files.
+func (s *GitService) GetStatusForFiles(ctx context.Context, files []string) (string, error) {
+	_, w, _, err := getRepo()
+	if err != nil {
+		return "", err
+	}
+
+	status, err := w.Status()
+	if err != nil {
+		return "", err
+	}
+
+	var sb strings.Builder
+	for _, f := range files {
+		if rel, err := toRel(f); err == nil {
+			if st, ok := status[rel]; ok {
+				sb.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(st.Staging), formatStatusCode(st.Worktree), rel))
+			}
+		}
+	}
+	return sb.String(), nil
+}
+
+// GetChangedFiles returns a sorted list of all modified, added, or deleted files in the repository.
+func (s *GitService) GetChangedFiles(ctx context.Context) ([]string, error) {
+	_, w, _, err := getRepo()
+	if err != nil {
+		return nil, err
+	}
+
+	status, err := w.Status()
+	if err != nil {
+		return nil, err
+	}
+
+	var changed []string
+	for path, st := range status {
+		if st.Staging != git.Unmodified || st.Worktree != git.Unmodified {
+			changed = append(changed, path)
+		}
+	}
+	sort.Strings(changed)
+	return changed, nil
+}
+
+// GetChangesForFiles generates a unified diff for the specified files against the HEAD commit.
+func (s *GitService) GetChangesForFiles(ctx context.Context, files []string) (string, error) {
+	r, _, _, err := getRepo()
+	if err != nil {
+		return "", err
+	}
+
+	headTree, _ := getHeadTree(r)
+	var sb strings.Builder
+
+	for _, file := range files {
+		rel, err := toRel(file)
+		if err != nil {
+			continue
+		}
+
+		oldText, isNew := "", true
+		if headTree != nil {
+			if f, err := headTree.File(rel); err == nil {
+				if c, err := f.Contents(); err == nil {
+					oldText, isNew = c, false
+				}
+			}
+		}
+
+		newBytes, err := os.ReadFile(file)
+		newText := string(newBytes)
+		isDeleted := err != nil
+
+		if isNew && isDeleted {
+			continue
+		}
+		sb.WriteString(generateDiffString(rel, oldText, newText, isNew, isDeleted))
+	}
+	return sb.String(), nil
+}
+
+// Commit stages the specified files and creates a new commit with the given message.
+func (s *GitService) Commit(ctx context.Context, files []string, message string) error {
+	r, w, _, err := getRepo()
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		rel, err := toRel(f)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Add(rel); err != nil {
+			return err
+		}
+	}
+
+	user, email := "Gitai User", "gitai@example.com"
+	if cfg, err := r.Config(); err == nil {
+		if cfg.User.Name != "" {
+			user = cfg.User.Name
+		}
+		if cfg.User.Email != "" {
+			email = cfg.User.Email
+		}
+	}
+
+	// Fallback to global config if local is empty
+	if user == "Gitai User" || email == "gitai@example.com" {
+		if global, err := config.LoadConfig(config.GlobalScope); err == nil {
+			if user == "Gitai User" && global.User.Name != "" {
+				user = global.User.Name
+			}
+			if email == "gitai@example.com" && global.User.Email != "" {
+				email = global.User.Email
+			}
+		}
+	}
+
+	_, err = w.Commit(message, &git.CommitOptions{
+		Author: &object.Signature{Name: user, Email: email, When: time.Now()},
+	})
+	return err
+}
+
+// Push pushes the current branch to the specified remote.
+func (s *GitService) Push(ctx context.Context, remoteName string) (string, error) {
+	r, _, _, err := getRepo()
+	if err != nil {
+		return "", err
+	}
+
+	remote, err := r.Remote(remoteName)
+	if err != nil {
+		return "", fmt.Errorf("remote '%s' not found", remoteName)
+	}
+
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", errors.New("origin has no URLs")
+	}
+
+	auth, err := resolveAuth(urls[0])
+	if err != nil {
+		return "", err
+	}
+
+	err = r.PushContext(ctx, &git.PushOptions{Auth: auth})
+	if err != nil {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+			return "Already up-to-date", nil
+		}
+		return "", err
+	}
+	return "Push successful", nil
+}
+
+// ResolvePath returns a list of all repository files within the given path.
+func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, error) {
+	r, w, root, err := getRepo()
+	if err != nil {
+		return nil, err
+	}
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil || !info.IsDir() {
+		if strings.HasPrefix(rel, "..") {
+			return nil, ErrOutsideRepo
+		}
+		return []string{rel}, nil
+	}
+
+	status, _ := w.Status()
+	headTree, _ := getHeadTree(r)
+
+	prefix := rel
+	if prefix == "." {
+		prefix = ""
+	}
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	seen := make(map[string]bool)
+	var results []string
+
+	add := func(p string) {
+		if (prefix == "" || strings.HasPrefix(p, prefix)) && !seen[p] {
+			results = append(results, p)
+			seen[p] = true
+		}
+	}
+
+	for p := range status {
+		add(p)
+	}
+
+	if headTree != nil {
+		_ = headTree.Files().ForEach(func(f *object.File) error {
+			add(f.Name)
+			return nil
+		})
+	}
+
+	sort.Strings(results)
+	return results, nil
+}
+
+// GetPullRequestURL generates a web URL to create a new pull request for the current branch.
+func (s *GitService) GetPullRequestURL(ctx context.Context, remoteName string) (string, error) {
+	r, _, _, err := getRepo()
+	if err != nil {
+		return "", err
+	}
+
+	head, err := r.Head()
+	if err != nil {
+		return "", err
+	}
+	branch := head.Name().Short()
+	if !head.Name().IsBranch() {
+		branch = head.Hash().String()
+	}
+
+	rem, err := r.Remote(remoteName)
+	if err != nil || len(rem.Config().URLs) == 0 {
+		return "", fmt.Errorf("no remote %s", remoteName)
+	}
+
+	url := rem.Config().URLs[0]
+	url = normalizeGitURL(url)
+
+	switch {
+	case strings.Contains(url, "github.com"):
+		return fmt.Sprintf("%s/pull/new/%s", url, branch), nil
+	case strings.Contains(url, "gitlab.com"):
+		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", url, branch), nil
+	case strings.Contains(url, "bitbucket.org"):
+		return fmt.Sprintf("%s/pull-requests/new?source=%s", url, branch), nil
+	default:
+		return "", fmt.Errorf("unknown host: %s", url)
+	}
+}
+
+// --- Internal Helper Functions ---
+
 func resolveAuth(url string) (transport.AuthMethod, error) {
 	if strings.HasPrefix(url, "http") {
 		return nil, nil
@@ -81,7 +346,6 @@ func resolveAuth(url string) (transport.AuthMethod, error) {
 	return auth, nil
 }
 
-// getRepo opens the git repository and returns its worktree and root path.
 func getRepo() (*git.Repository, *git.Worktree, string, error) {
 	root, err := GetGitRoot()
 	if err != nil {
@@ -95,7 +359,6 @@ func getRepo() (*git.Repository, *git.Worktree, string, error) {
 	return r, w, root, err
 }
 
-// toRel converts a file path to a repository-relative path.
 func toRel(path string) (string, error) {
 	root, err := GetGitRoot()
 	if err != nil {
@@ -118,213 +381,6 @@ func toRel(path string) (string, error) {
 	return rel, nil
 }
 
-// Push pushes the current branch to the specified remote.
-func Push(remoteName string) (string, error) {
-	r, _, _, err := getRepo()
-	if err != nil {
-		return "", err
-	}
-
-	remote, err := r.Remote(remoteName)
-	if err != nil {
-		return "", fmt.Errorf("remote '%s' not found", remoteName)
-	}
-
-	urls := remote.Config().URLs
-	if len(urls) == 0 {
-		return "", errors.New("origin has no URLs")
-	}
-
-	auth, err := resolveAuth(urls[0])
-	if err != nil {
-		return "", err
-	}
-
-	err = r.Push(&git.PushOptions{Auth: auth})
-	if err != nil {
-		if errors.Is(err, git.NoErrAlreadyUpToDate) {
-			return "Already up-to-date", nil
-		}
-		return "", err
-	}
-	return "Push successful", nil
-}
-
-// Commit stages the specified files and creates a new commit with the given message.
-func Commit(files []string, message string) error {
-	r, w, _, err := getRepo()
-	if err != nil {
-		return err
-	}
-
-	for _, f := range files {
-		rel, err := toRel(f)
-		if err != nil {
-			return err
-		}
-		if _, err := w.Add(rel); err != nil {
-			return err
-		}
-	}
-
-	user, email := "Gitai User", "gitai@example.com"
-	if cfg, _ := r.Config(); cfg != nil {
-		if u := cfg.Raw.Section("user"); u != nil {
-			if n := u.Option("name"); n != "" {
-				user = n
-			}
-			if e := u.Option("email"); e != "" {
-				email = e
-			}
-		}
-	}
-
-	_, err = w.Commit(message, &git.CommitOptions{
-		Author: &object.Signature{Name: user, Email: email, When: time.Now()},
-	})
-	return err
-}
-
-// GetStatusForFiles returns the porcelain status of the specified files.
-func GetStatusForFiles(files []string) (string, error) {
-	_, w, _, err := getRepo()
-	if err != nil {
-		return "", err
-	}
-
-	status, err := w.Status()
-	if err != nil {
-		return "", err
-	}
-
-	var sb strings.Builder
-	for _, f := range files {
-		if rel, err := toRel(f); err == nil {
-			if s, ok := status[rel]; ok {
-				sb.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(s.Staging), formatStatusCode(s.Worktree), rel))
-			}
-		}
-	}
-	return sb.String(), nil
-}
-
-// GetChangedFiles returns a sorted list of all modified, added, or deleted files in the repository.
-func GetChangedFiles() ([]string, error) {
-	_, w, _, err := getRepo()
-	if err != nil {
-		return nil, err
-	}
-
-	status, err := w.Status()
-	if err != nil {
-		return nil, err
-	}
-
-	var changed []string
-	for path, s := range status {
-		if s.Staging != git.Unmodified || s.Worktree != git.Unmodified {
-			changed = append(changed, path)
-		}
-	}
-	sort.Strings(changed)
-	return changed, nil
-}
-
-// GetChangesForFiles generates a unified diff for the specified files against the HEAD commit.
-func GetChangesForFiles(files []string) (string, error) {
-	r, _, _, err := getRepo()
-	if err != nil {
-		return "", err
-	}
-
-	headTree, _ := getHeadTree(r)
-	var sb strings.Builder
-
-	for _, file := range files {
-		rel, err := toRel(file)
-		if err != nil {
-			continue
-		}
-
-		oldText, isNew := "", true
-		if headTree != nil {
-			if f, err := headTree.File(rel); err == nil {
-				if c, err := f.Contents(); err == nil {
-					oldText, isNew = c, false
-				}
-			}
-		}
-
-		newBytes, err := os.ReadFile(file)
-		newText := string(newBytes)
-		isDeleted := err != nil
-
-		if isNew && isDeleted {
-			continue
-		}
-		sb.WriteString(generateDiffString(rel, oldText, newText, isNew, isDeleted))
-	}
-	return sb.String(), nil
-}
-
-// ResolvePath returns a list of all repository files within the given path.
-func ResolvePath(path string) ([]string, error) {
-	r, w, root, err := getRepo()
-	if err != nil {
-		return nil, err
-	}
-
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
-	rel, err := filepath.Rel(root, abs)
-
-	info, err := os.Stat(abs)
-	if err != nil || !info.IsDir() {
-		if strings.HasPrefix(rel, "..") {
-			return nil, ErrOutsideRepo
-		}
-		return []string{rel}, nil
-	}
-
-	status, _ := w.Status()
-	headTree, _ := getHeadTree(r)
-
-	prefix := rel
-	if prefix == "." {
-		prefix = ""
-	}
-	if prefix != "" && !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
-	}
-
-	seen := make(map[string]bool)
-	var results []string
-
-	add := func(p string) {
-		if (prefix == "" || strings.HasPrefix(p, prefix)) && !seen[p] {
-			results = append(results, p)
-			seen[p] = true
-		}
-	}
-
-	for p := range status {
-		add(p)
-	}
-
-	if headTree != nil {
-		_ = headTree.Files().ForEach(func(f *object.File) error {
-			add(f.Name)
-			return nil
-		})
-	}
-
-	sort.Strings(results)
-	return results, nil
-}
-
-// getHeadTree returns the tree object of the HEAD commit.
 func getHeadTree(r *git.Repository) (*object.Tree, error) {
 	head, err := r.Head()
 	if err != nil {
@@ -367,7 +423,8 @@ func formatStatusCode(c git.StatusCode) rune {
 // prevent context bleeding between files and align with the model's training data.
 func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
-	patches := dmp.PatchMake(old, new)
+	diffs := dmp.DiffMain(old, new, false)
+	dmp.DiffCleanupSemantic(diffs)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
@@ -378,7 +435,27 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	} else {
 		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
-	sb.WriteString(dmp.PatchToText(patches))
+
+	for _, d := range diffs {
+		lines := strings.Split(d.Text, "\n")
+		prefix := " "
+		switch d.Type {
+		case diffmatchpatch.DiffInsert:
+			prefix = "+"
+		case diffmatchpatch.DiffDelete:
+			prefix = "-"
+		}
+
+		for i, line := range lines {
+			if i == len(lines)-1 && line == "" {
+				continue
+			}
+			sb.WriteString(prefix)
+			sb.WriteString(line)
+			sb.WriteString("\n")
+		}
+	}
+
 	return sb.String()
 }
 
@@ -396,45 +473,4 @@ func normalizeGitURL(url string) string {
 		url = "https://" + url
 	}
 	return url
-}
-
-// GetPullRequestURL generates a web URL to create a new pull request for the current branch.
-func GetPullRequestURL(remoteName string) (string, error) {
-	r, _, _, err := getRepo()
-	if err != nil {
-		return "", err
-	}
-
-	head, err := r.Head()
-	if err != nil {
-		return "", err
-	}
-	branch := head.Name().Short()
-	if !head.Name().IsBranch() {
-		branch = head.Hash().String()
-	}
-
-	rem, err := r.Remote(remoteName)
-	if err != nil || len(rem.Config().URLs) == 0 {
-		return "", fmt.Errorf("no remote %s", remoteName)
-	}
-
-	url := rem.Config().URLs[0]
-	url = strings.TrimSuffix(strings.TrimSpace(url), ".git")
-	if strings.HasPrefix(url, "git@") {
-		url = "https://" + strings.Replace(strings.TrimPrefix(url, "git@"), ":", "/", 1)
-	} else if strings.HasPrefix(url, "ssh://") {
-		url = "https://" + strings.TrimPrefix(strings.Split(url, "@")[1], ":")
-	}
-
-	switch {
-	case strings.Contains(url, "github.com"):
-		return fmt.Sprintf("%s/pull/new/%s", url, branch), nil
-	case strings.Contains(url, "gitlab.com"):
-		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", url, branch), nil
-	case strings.Contains(url, "bitbucket.org"):
-		return fmt.Sprintf("%s/pull-requests/new?source=%s", url, branch), nil
-	default:
-		return "", fmt.Errorf("unknown host: %s", url)
-	}
 }

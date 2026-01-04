@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +82,30 @@ func TestGetGitRoot_NotFound(t *testing.T) {
 	}
 }
 
+func TestFindGitRoot(t *testing.T) {
+	// 1. Valid git repo
+	dir, _ := setupTestRepo(t)
+	defer os.RemoveAll(dir)
+	root, err := findGitRoot(dir)
+	if err != nil || root == "" {
+		t.Errorf("findGitRoot failed on valid dir: %v", err)
+	}
+
+	// 2. Not a git repo
+	tempDir, _ := os.MkdirTemp("", "gitroot-fail")
+	defer os.RemoveAll(tempDir)
+	_, err = findGitRoot(tempDir)
+	if err == nil {
+		t.Error("expected error for non-git dir")
+	}
+
+	// 3. Invalid path
+	_, err = findGitRoot("\x00")
+	if err == nil {
+		t.Log("Note: null byte didn't trigger filepath.Abs error in this environment")
+	}
+}
+
 func TestGetChangedFiles(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
@@ -88,10 +113,12 @@ func TestGetChangedFiles(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
+	ctx := context.Background()
+	gs := NewGitService()
 	w, _ := wRepo.Worktree()
 	os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("content1"), 0644)
 
-	files, _ := GetChangedFiles()
+	files, _ := gs.GetChangedFiles(ctx)
 	if len(files) != 1 || files[0] != "file1.txt" {
 		t.Errorf("expected [file1.txt], got %v", files)
 	}
@@ -101,7 +128,7 @@ func TestGetChangedFiles(t *testing.T) {
 		Author: &object.Signature{Name: "Me", Email: "me@me.com", When: time.Now()},
 	})
 
-	files, _ = GetChangedFiles()
+	files, _ = gs.GetChangedFiles(ctx)
 	if len(files) != 0 {
 		t.Errorf("expected [], got %v", files)
 	}
@@ -114,23 +141,26 @@ func TestCommit(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
+	ctx := context.Background()
+	gs := NewGitService()
+
 	// 1. Add/Commit
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
-	if err := Commit([]string{"main.go"}, "Add main"); err != nil {
+	if err := gs.Commit(ctx, []string{"main.go"}, "Add main"); err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Delete/Commit
 	os.Remove(filepath.Join(dir, "main.go"))
-	if err := Commit([]string{"main.go"}, "Delete main"); err != nil {
+	if err := gs.Commit(ctx, []string{"main.go"}, "Delete main"); err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Rename/Commit
 	os.WriteFile(filepath.Join(dir, "old.txt"), []byte("content"), 0644)
-	Commit([]string{"old.txt"}, "Add old")
+	gs.Commit(ctx, []string{"old.txt"}, "Add old")
 	os.Rename(filepath.Join(dir, "old.txt"), filepath.Join(dir, "new.txt"))
-	if err := Commit([]string{"old.txt", "new.txt"}, "Rename"); err != nil {
+	if err := gs.Commit(ctx, []string{"old.txt", "new.txt"}, "Rename"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -162,10 +192,13 @@ func TestGetChangesForFiles(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(dir)
+	
+	ctx := context.Background()
+	gs := NewGitService()
 	w, _ := wRepo.Worktree()
 
 	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello"), 0644)
-	diff, _ := GetChangesForFiles([]string{"new.txt"})
+	diff, _ := gs.GetChangesForFiles(ctx, []string{"new.txt"})
 	if !strings.Contains(diff, "new file") {
 		t.Error("expected new file diff")
 	}
@@ -176,7 +209,7 @@ func TestGetChangesForFiles(t *testing.T) {
 	})
 
 	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello world"), 0644)
-	diff, _ = GetChangesForFiles([]string{"new.txt"})
+	diff, _ = gs.GetChangesForFiles(ctx, []string{"new.txt"})
 	if !strings.Contains(diff, "hello") || !strings.Contains(diff, "world") {
 		t.Errorf("diff missing expected content: %s", diff)
 	}
@@ -189,8 +222,11 @@ func TestGetStatusForFiles(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
+	ctx := context.Background()
+	gs := NewGitService()
+
 	os.WriteFile(filepath.Join(dir, "status.txt"), []byte("data"), 0644)
-	status, err := GetStatusForFiles([]string{"status.txt"})
+	status, err := gs.GetStatusForFiles(ctx, []string{"status.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,6 +241,9 @@ func TestResolvePath(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(dir)
+	
+	ctx := context.Background()
+	gs := NewGitService()
 	w, _ := wRepo.Worktree()
 
 	os.Mkdir(filepath.Join(dir, "subdir"), 0755)
@@ -230,7 +269,7 @@ func TestResolvePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := ResolvePath(tt.path)
+			results, err := gs.ResolvePath(ctx, tt.path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -253,6 +292,9 @@ func TestGetPullRequestURL(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
+	ctx := context.Background()
+	gs := NewGitService()
+
 	tests := []struct {
 		name     string
 		remote   string
@@ -271,7 +313,7 @@ func TestGetPullRequestURL(t *testing.T) {
 			})
 			defer r.DeleteRemote("origin")
 
-			url, err := GetPullRequestURL("origin")
+			url, err := gs.GetPullRequestURL(ctx, "origin")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -283,26 +325,26 @@ func TestGetPullRequestURL(t *testing.T) {
 }
 
 func TestPush(t *testing.T) {
-	// 1. Setup Bare Remote Repo
 	remoteDir, err := os.MkdirTemp("", "gitai-remote")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(remoteDir)
-	_, err = git.PlainInit(remoteDir, true) // isBare = true
+	_, err = git.PlainInit(remoteDir, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// 2. Setup Local Repo
-	localDir, r := setupTestRepo(t) // already has initial commit
+	localDir, r := setupTestRepo(t)
 	defer os.RemoveAll(localDir)
 
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(localDir)
 
-	// 3. Add Remote 'origin' pointing to the bare repo
+	ctx := context.Background()
+	gs := NewGitService()
+
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{remoteDir},
@@ -311,8 +353,7 @@ func TestPush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 4. Push
-	out, err := Push("origin")
+	out, err := gs.Push(ctx, "origin")
 	if err != nil {
 		t.Fatalf("Push failed: %v", err)
 	}
@@ -320,7 +361,6 @@ func TestPush(t *testing.T) {
 		t.Errorf("unexpected push output: %s", out)
 	}
 
-	// 5. Verify push happened by checking HEAD in the remote repo
 	remoteRepo, _ := git.PlainOpen(remoteDir)
 	_, err = remoteRepo.Head()
 	if err != nil {

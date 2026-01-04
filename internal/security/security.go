@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/sourcegraph/go-diff/diff"
-	"github.com/spf13/viper"
 )
 
 type Finding struct {
@@ -17,38 +16,7 @@ type Finding struct {
 	Text string
 }
 
-func GetSensitiveKeywords() []string {
-	// 1. Try getting as a slice (yaml list, or default value)
-	sl := viper.GetStringSlice("security.keywords")
-	if len(sl) > 0 {
-		return sl
-	}
-
-	// 2. Try getting as a string (env var CSV) if slice conversion failed
-	s := viper.GetString("security.keywords")
-	if s != "" {
-		return parseKeywordsCSV(s)
-	}
-
-	return []string{}
-}
-
-
-func parseKeywordsCSV(csv string) []string {
-	parts := strings.Split(csv, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.ToLower(strings.TrimSpace(p))
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func CheckDiffSafety(diffText string) error {
-	keywords := GetSensitiveKeywords()
-
+func CheckDiffSafety(diffText string, keywords []string) error {
 	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
 	if err != nil {
 		return err
@@ -70,9 +38,6 @@ func CheckDiffSafety(diffText string) error {
 
 				switch ln[0] {
 				case '+':
-					if strings.HasPrefix(ln, "+++") {
-						continue
-					}
 					text := strings.TrimPrefix(ln, "+")
 					if containsKeyword(text, keywords) {
 						findings = append(findings, Finding{File: filename, Line: newLine, Text: strings.TrimSpace(text)})
@@ -101,7 +66,7 @@ func CheckDiffSafety(diffText string) error {
 		if !filepath.IsAbs(abs) {
 			abs = filepath.Join(cwd, abs)
 		}
-		// create file:// URI with encoded path so terminals like VS Code treat it as a clickable link
+		// create file:// URI with an encoded path so terminals like VS Code treat it as a clickable link
 		u := url.URL{Scheme: "file", Path: abs}
 		fileURI := u.String()
 		b.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", fileURI, f.Line, f.Text))
