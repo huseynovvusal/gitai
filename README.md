@@ -101,12 +101,12 @@ Configuration is managed with Viper and supports CLI flags, environment variable
 **Priorities:** Flags > Env Vars > Config Files > Defaults.
 
 ### Documentation
-Detailed configuration guides are available in the `docs/wiki/` directory:
-- [**Configuration Reference**](docs/wiki/Configuration.md) (All options & files)
-- [**AI Providers**](docs/wiki/AI-Providers.md) (Setup for GPT, Gemini, Ollama)
-- [**Customization**](docs/wiki/Customization.md) (Editors, styles)
-- [**Security**](docs/wiki/Security.md) (Keyword scanner & privacy)
-- [**Internals**](docs/wiki/Internals.md) (Architecture & How it works)
+Detailed configuration guides are available in the [**Project Wiki**](https://github.com/artback/gitai/wiki):
+- [**Configuration Reference**](https://github.com/artback/gitai/wiki/Configuration) (All options & files)
+- [**AI Providers**](https://github.com/artback/gitai/wiki/AI-Providers) (Setup for GPT, Gemini, Ollama)
+- [**Customization**](https://github.com/artback/gitai/wiki/Customization) (Editors, styles)
+- [**Security**](https://github.com/artback/gitai/wiki/Security) (Keyword scanner & privacy)
+- [**Internals**](https://github.com/artback/gitai/wiki/Internals) (Architecture & How it works)
 
 ### Quick Example (`gitai.yaml`)
 ```yaml
