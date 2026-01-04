@@ -6,7 +6,7 @@ Set FontSize 24
 Set Width 1600
 Set Height 900
 Set Padding 40
-Set FontFamily "Monaco"
+Set FontFamily "JetBrains Mono"
 Set LineHeight 1.2
 Set WindowBar Colorful
 
