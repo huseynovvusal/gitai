@@ -418,9 +418,17 @@ func formatStatusCode(c git.StatusCode) rune {
 	}
 }
 
+// generateDiffString creates a unified diff compatible with standard git output.
+//
+// It uses sergi/go-diff to calculate character-level changes and applies
+// DiffCleanupSemantic to group these changes into logical, human-readable blocks.
+// The output includes standard git headers (diff --git, ---, +++) which provide
+// critical context for both security scanning and AI commit message generation.
+// Manual formatting is used instead of library defaults to avoid URL encoding.
 func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
-	patches := dmp.PatchMake(old, new)
+	diffs := dmp.DiffMain(old, new, false)
+	dmp.DiffCleanupSemantic(diffs)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
@@ -431,7 +439,26 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	} else {
 		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
-	sb.WriteString(dmp.PatchToText(patches))
+
+	for _, d := range diffs {
+		lines := strings.Split(d.Text, "\n")
+		prefix := " "
+		if d.Type == diffmatchpatch.DiffInsert {
+			prefix = "+"
+		} else if d.Type == diffmatchpatch.DiffDelete {
+			prefix = "-"
+		}
+
+		for i, line := range lines {
+			if i == len(lines)-1 && line == "" {
+				continue
+			}
+			sb.WriteString(prefix)
+			sb.WriteString(line)
+			sb.WriteString("\n")
+		}
+	}
+
 	return sb.String()
 }
 
