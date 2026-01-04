@@ -18,7 +18,8 @@ var suggestCmd = &cobra.Command{
 	Use:   "suggest [files...]",
 	Short: "Suggest commit messages for changed files using AI",
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		files, err := git.GetChangedFiles()
+		gitService := git.NewGitService()
+		files, err := gitService.GetChangedFiles()
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
@@ -33,7 +34,7 @@ var suggestCmd = &cobra.Command{
 			return files, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		return getFilteredSuggestions(toComplete, args, files, repoRoot, cwd), cobra.ShellCompDirectiveNoFileComp
+		return getFilteredSuggestions(toComplete, args, files, repoRoot, cwd, gitService), cobra.ShellCompDirectiveNoFileComp
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		rootCtx, cancel := context.WithCancel(context.Background())
@@ -58,7 +59,9 @@ var suggestCmd = &cobra.Command{
 		hint := viper.GetString("suggest.hint")
 		skipHint := viper.GetBool("suggest.no-hint")
 
-		flow := suggest.NewFlow(rootCtx, service, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
+		gitService := git.NewGitService()
+
+		flow := suggest.NewFlow(rootCtx, service, gitService, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
 			WithHint(hint).
 			WithSkipHint(skipHint)
 		flow.Run(args)
@@ -85,10 +88,14 @@ func init() {
 	rootCmd.AddCommand(suggestCmd)
 }
 
-func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string) []string {
+type gitService interface {
+	ResolvePath(path string) ([]string, error)
+}
+
+func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string, gs gitService) []string {
 	selectedSet := make(map[string]bool)
 	for _, arg := range selectedArgs {
-		if resolved, err := git.ResolvePath(arg); err == nil {
+		if resolved, err := gs.ResolvePath(arg); err == nil {
 			for _, r := range resolved {
 				selectedSet[r] = true
 			}
