@@ -12,8 +12,9 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"golang.org/x/crypto/ssh"
 )
 
 // openRepo opens the git repository from the current directory or a parent.
@@ -442,14 +443,16 @@ func Push() (string, error) {
 }
 
 // getAuth attempts to find authentication for the given URL.
-// It currently supports SSH Agent and default SSH key files.
 func getAuth(url string) transport.AuthMethod {
 	if !isSSH(url) {
 		return nil
 	}
 
+	user := extractUser(url)
+
 	// 1. Try SSH Agent
-	if auth, err := ssh.NewSSHAgentAuth("git"); err == nil {
+	if auth, err := gitssh.NewSSHAgentAuth(user); err == nil {
+		auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
 		return auth
 	}
 
@@ -459,17 +462,34 @@ func getAuth(url string) transport.AuthMethod {
 		return nil
 	}
 
-	keys := []string{"id_ed25519", "id_rsa", "id_dsa"}
+	keys := []string{"id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"}
 	for _, key := range keys {
 		keyPath := filepath.Join(home, ".ssh", key)
 		if _, err := os.Stat(keyPath); err == nil {
-			if auth, err := ssh.NewPublicKeysFromFile("git", keyPath, ""); err == nil {
+			if auth, err := gitssh.NewPublicKeysFromFile(user, keyPath, ""); err == nil {
+				auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
 				return auth
 			}
 		}
 	}
 
 	return nil
+}
+
+func extractUser(url string) string {
+	user := "git"
+	if strings.Contains(url, "@") {
+		// Handle git@github.com... or ssh://user@github.com...
+		parts := strings.Split(url, "@")
+		userPart := parts[0]
+		if i := strings.Index(userPart, "://"); i != -1 {
+			userPart = userPart[i+3:]
+		}
+		if userPart != "" {
+			user = userPart
+		}
+	}
+	return user
 }
 
 func isSSH(url string) bool {
