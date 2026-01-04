@@ -12,8 +12,9 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"golang.org/x/crypto/ssh"
 )
 
 var ErrOutsideRepo = errors.New("path is outside the repository")
@@ -373,22 +374,42 @@ func resolveAuth(url string) transport.AuthMethod {
 		return nil // Rely on git credential helpers or nil
 	}
 
+	user := extractUser(url)
+
 	// 1. SSH Agent
-	if auth, err := ssh.NewSSHAgentAuth("git"); err == nil {
+	if auth, err := gitssh.NewSSHAgentAuth(user); err == nil {
+		auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
 		return auth
 	}
 
 	// 2. Common Key Files
 	home, _ := os.UserHomeDir()
-	for _, key := range []string{"id_ed25519", "id_rsa"} {
+	for _, key := range []string{"id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"} {
 		path := filepath.Join(home, ".ssh", key)
 		if _, err := os.Stat(path); err == nil {
-			if auth, err := ssh.NewPublicKeysFromFile("git", path, ""); err == nil {
+			if auth, err := gitssh.NewPublicKeysFromFile(user, path, ""); err == nil {
+				auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
 				return auth
 			}
 		}
 	}
 	return nil
+}
+
+func extractUser(url string) string {
+	user := "git"
+	if strings.Contains(url, "@") {
+		// Handle git@github.com... or ssh://user@github.com...
+		parts := strings.Split(url, "@")
+		userPart := parts[0]
+		if i := strings.Index(userPart, "://"); i != -1 {
+			userPart = userPart[i+3:]
+		}
+		if userPart != "" {
+			user = userPart
+		}
+	}
+	return user
 }
 
 // GetCurrentBranch returns the name of the current branch.
@@ -465,6 +486,10 @@ func normalizeGitURL(url string) string {
 		url = strings.Replace(url, ":", "/", 1)
 	} else if strings.HasPrefix(url, "ssh://") {
 		url = strings.TrimPrefix(url, "ssh://")
+		// Remove user part if present (e.g., git@)
+		if i := strings.Index(url, "@"); i != -1 {
+			url = url[i+1:]
+		}
 	}
 
 	// Ensure it starts with https:// if it doesn't already
