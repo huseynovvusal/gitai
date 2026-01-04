@@ -50,5 +50,9 @@ release/
 # Gitai specific
 gitai.yaml
 
-#wiki
+# Temporary demo environment
+demo_env/
+.ssh/
+
+# Wiki
 docs/

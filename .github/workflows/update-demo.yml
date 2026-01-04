@@ -1,0 +1,49 @@
+name: Update Demo GIF
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'assets/demo.tape'
+      - 'internal/**'
+      - 'cmd/**'
+      - 'main.go'
+      - 'internal/tui/**'
+
+permissions:
+  contents: write
+
+jobs:
+  update-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build gitai
+        run: |
+          mkdir -p bin
+          go build -o bin/gitai main.go
+          chmod +x bin/gitai
+
+      - name: Run VHS
+        uses: charmbracelet/vhs-action@v1
+        with:
+          path: 'assets/demo.tape'
+
+      - name: Check for changes
+        id: git-check
+        run: |
+          git diff --exit-code assets/usage.gif || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changes
+        if: steps.git-check.outputs.changed == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(assets): update usage.gif [skip ci]"
+          file_pattern: assets/usage.gif
