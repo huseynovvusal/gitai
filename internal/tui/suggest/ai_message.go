@@ -12,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"huseynovvusal/gitai/internal/ai"
-	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/security"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
@@ -59,6 +58,21 @@ const (
 	StateEditing                      // Internal editor active
 )
 
+type GitDiffStatus interface {
+	GetChangesForFiles(files []string) (string, error)
+	GetStatusForFiles(files []string) (string, error)
+}
+
+type GitCommitter interface {
+	Commit(files []string, message string) error
+	Push(remoteName string) (string, error)
+}
+
+type messageGitService interface {
+	GitDiffStatus
+	GitCommitter
+}
+
 type AIMessageModel struct {
 	files         []string
 	commitMessage string
@@ -67,6 +81,7 @@ type AIMessageModel struct {
 	errMsg        string
 	cancel        bool
 	generator     ai.CommitMessageGenerator
+	gitService    messageGitService
 	savedDiff     string
 	savedStatus   string
 	ctx           context.Context
@@ -76,7 +91,7 @@ type AIMessageModel struct {
 	pushOutput    string
 }
 
-func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, editorMode string, hint string) AIMessageModel {
+func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, gs messageGitService, editorMode string, hint string) AIMessageModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
@@ -96,20 +111,21 @@ func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitM
 		cancel:        false,
 		ctx:           ctx,
 		generator:     generator,
+		gitService:    gs,
 		editorMode:    editorMode,
 		textArea:      ta,
 		hint:          hint,
 	}
 }
 
-func runAIAsync(ctx context.Context, generator ai.CommitMessageGenerator, files []string, hint string) tea.Cmd {
+func runAIAsync(ctx context.Context, generator ai.CommitMessageGenerator, gs messageGitService, files []string, hint string) tea.Cmd {
 	return func() tea.Msg {
-		diff, err := git.GetChangesForFiles(files)
+		diff, err := gs.GetChangesForFiles(files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		status, err := git.GetStatusForFiles(files)
+		status, err := gs.GetStatusForFiles(files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -139,16 +155,16 @@ func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessag
 	}
 }
 
-func runCommitAsync(files []string, message string) tea.Cmd {
+func runCommitAsync(gs messageGitService, files []string, message string) tea.Cmd {
 	return func() tea.Msg {
-		err := git.Commit(files, message)
+		err := gs.Commit(files, message)
 		return commitResultMsg{err: err}
 	}
 }
 
-func runPushAsync(remote string) tea.Cmd {
+func runPushAsync(gs messageGitService, remote string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := git.Push(remote)
+		out, err := gs.Push(remote)
 		return pushResultMsg{err: err, output: out}
 	}
 }
@@ -194,7 +210,7 @@ func openEditor(content string, editorCmd string) tea.Cmd {
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		runAIAsync(m.ctx, m.generator, m.files, m.hint),
+		runAIAsync(m.ctx, m.generator, m.gitService, m.files, m.hint),
 	)
 }
 
@@ -243,14 +259,14 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StateCommitting
 				m.errMsg = ""
 
-				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.files, m.commitMessage))
+				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.gitService, m.files, m.commitMessage))
 			}
 		case "p":
 			// allow pushing only when we've committed
 			if m.state == StateCommitted {
 				m.state = StatePushing
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runPushAsync("origin"))
+				return m, tea.Batch(m.spinner.Tick, runPushAsync(m.gitService, "origin"))
 			}
 		case "e":
 			if m.state == StateGenerated {
@@ -267,7 +283,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateGenerated {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, m.generator, m.files, m.hint))
+				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, m.generator, m.gitService, m.files, m.hint))
 			}
 		}
 	case spinner.TickMsg:

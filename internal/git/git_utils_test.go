@@ -49,9 +49,9 @@ func TestNormalizeGitURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := normalizeGitURL(tt.input)
+			result := NormalizeGitURL(tt.input)
 			if result != tt.expected {
-				t.Errorf("normalizeGitURL(%q) = %q; want %q", tt.input, result, tt.expected)
+				t.Errorf("NormalizeGitURL(%q) = %q; want %q", tt.input, result, tt.expected)
 			}
 		})
 	}
@@ -105,8 +105,6 @@ func TestResolveAuth_Callback(t *testing.T) {
 		t.Fatal("expected *gitssh.PublicKeysCallback")
 	}
 
-	// We don't care about the result, just that it executes.
-	// We set a fake SSH_AUTH_SOCK to hit that path too.
 	t.Setenv("SSH_AUTH_SOCK", "/tmp/non-existent-sock")
 	_, _ = pkc.Callback()
 }
