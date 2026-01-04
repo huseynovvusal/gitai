@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -420,9 +422,16 @@ func Push() (string, error) {
 		return "", err
 	}
 
-	// This relies on default auth methods (agent, etc.)
-	// Ideally we would prompt for creds if needed, but that's complex in CLI.
-	err = r.Push(&git.PushOptions{})
+	remote, err := r.Remote("origin")
+	if err != nil {
+		return "", err
+	}
+
+	auth := getAuth(remote.Config().URLs[0])
+
+	err = r.Push(&git.PushOptions{
+		Auth: auth,
+	})
 	if err != nil {
 		if errors.Is(err, git.NoErrAlreadyUpToDate) {
 			return "Already up-to-date", nil
@@ -432,7 +441,42 @@ func Push() (string, error) {
 	return "Push successful", nil
 }
 
-// ResolvePath resolves a file path (relative to CWD) to paths relative to the git repository root.
+// getAuth attempts to find authentication for the given URL.
+// It currently supports SSH Agent and default SSH key files.
+func getAuth(url string) transport.AuthMethod {
+	if !isSSH(url) {
+		return nil
+	}
+
+	// 1. Try SSH Agent
+	if auth, err := ssh.NewSSHAgentAuth("git"); err == nil {
+		return auth
+	}
+
+	// 2. Try default key files
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	keys := []string{"id_ed25519", "id_rsa", "id_dsa"}
+	for _, key := range keys {
+		keyPath := filepath.Join(home, ".ssh", key)
+		if _, err := os.Stat(keyPath); err == nil {
+			if auth, err := ssh.NewPublicKeysFromFile("git", keyPath, ""); err == nil {
+				return auth
+			}
+		}
+	}
+
+	return nil
+}
+
+func isSSH(url string) bool {
+	return strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://")
+}
+
+// ResolvePath resolves a file path to repo-relative paths.
 // It supports directories by returning all files within them that are tracked or changed.
 func ResolvePath(path string) ([]string, error) {
 	root, err := GetGitRoot()
