@@ -156,6 +156,9 @@ func TestGenerateDiffString(t *testing.T) {
 					t.Errorf("Expected result to contain %q\nResult:\n%s", s, result)
 				}
 			}
+			if strings.Contains(result, "%0A") || strings.Contains(result, "%7B") {
+				t.Errorf("Result contains URL encoded characters: %s", result)
+			}
 		})
 	}
 }

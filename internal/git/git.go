@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -131,13 +132,23 @@ func (s *GitService) Commit(ctx context.Context, files []string, message string)
 	}
 
 	user, email := "Gitai User", "gitai@example.com"
-	if cfg, _ := r.Config(); cfg != nil {
-		if u := cfg.Raw.Section("user"); u != nil {
-			if n := u.Option("name"); n != "" {
-				user = n
+	if cfg, err := r.Config(); err == nil {
+		if cfg.User.Name != "" {
+			user = cfg.User.Name
+		}
+		if cfg.User.Email != "" {
+			email = cfg.User.Email
+		}
+	}
+
+	// Fallback to global config if local is empty
+	if user == "Gitai User" || email == "gitai@example.com" {
+		if global, err := config.LoadConfig(config.GlobalScope); err == nil {
+			if user == "Gitai User" && global.User.Name != "" {
+				user = global.User.Name
 			}
-			if e := u.Option("email"); e != "" {
-				email = e
+			if email == "gitai@example.com" && global.User.Email != "" {
+				email = global.User.Email
 			}
 		}
 	}
