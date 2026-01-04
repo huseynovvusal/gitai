@@ -2,14 +2,13 @@ package suggest
 
 import (
 	"fmt"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/paginator"
-	"huseynovvusal/gitai/internal/tui/multilist"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/paginator"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
+	"huseynovvusal/gitai/internal/tui/multilist"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
 
@@ -50,11 +49,13 @@ func (m *FileSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "ctrl+c", "q":
 				m.quitting = true
+
 				return m, tea.Quit
 			case "enter":
 				// Validation: Ensure at least one file is selected
 				if len(m.MultiList.GetSelected()) > 0 {
 					m.done = true
+
 					return m, tea.Quit
 				}
 			}
@@ -63,7 +64,9 @@ func (m *FileSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Forward everything else to the wrapper
 	var cmd tea.Cmd
+
 	m.MultiList, cmd = m.MultiList.Update(msg)
+
 	return m, cmd
 }
 
@@ -74,10 +77,13 @@ func (m *FileSelectorModel) View() string {
 
 	if m.done {
 		var b strings.Builder
+
 		b.WriteString(shared.HeaderStyle.Render("Selected files:") + "\n")
+
 		for _, f := range m.GetSelectedFiles() {
 			b.WriteString(fmt.Sprintf(" - %s\n", f))
 		}
+
 		return b.String()
 	}
 

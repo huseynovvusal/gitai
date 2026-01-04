@@ -1,9 +1,28 @@
-name: Go Test and Coverage
+name: Go Test, Lint and Coverage
 on:
+  push:
+    branches: [ main ]
   pull_request:
-    types: [ opened, synchronize, reopened ]
+    branches: [ main ]
   workflow_dispatch:
+
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.7
+
   test:
     name: Run Go Tests
     runs-on: ubuntu-latest
@@ -16,13 +35,25 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23
+          go-version: "1.24"
+
+      - name: Run Tests with Coverage
+        run: go test -v -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Test Report
+        if: always()
         id: test-report
         uses: robherley/go-test-action@v0
         with:
-          testArguments: ${{ github.event_name == 'pull_request' && '-short -v ./...' || '-count 1 -v ./...' }}
+          testArguments: "-v ./..."
+      
       - name: PR Comment
         if: always() && github.event_name == 'pull_request'
         uses: mshick/add-pr-comment@v2

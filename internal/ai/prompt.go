@@ -15,5 +15,6 @@ var whitespaceRegex = regexp.MustCompile(`\s+`)
 // (spaces, newlines, tabs) with a single space, and then trims leading/trailing spaces.
 func compressWhitespace(input string) string {
 	compressed := whitespaceRegex.ReplaceAllString(input, " ")
+
 	return strings.TrimSpace(compressed)
 }

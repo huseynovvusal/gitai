@@ -2,11 +2,11 @@ package multilist
 
 import (
 	"fmt"
-	"github.com/charmbracelet/bubbles/paginator"
 	"io"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/paginator"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
@@ -121,16 +121,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if m.List.FilterState() == list.Filtering {
 			break
 		}
+
 		if key.Matches(msg, m.keys.Toggle) {
 			return m.toggleCurrent()
 		}
+
 		if key.Matches(msg, m.keys.SelectAll) {
 			return m.toggleAll()
 		}
 	}
 
 	var cmd tea.Cmd
+
 	m.List, cmd = m.List.Update(msg)
+
 	return m, cmd
 }
 
@@ -144,12 +148,14 @@ func (m Model) SetSize(width, height int) {
 
 func (m Model) GetSelected() []string {
 	var selected []string
+
 	for _, i := range m.List.Items() {
 		item := i.(Item)
 		if item.Selected {
 			selected = append(selected, item.Value)
 		}
 	}
+
 	return selected
 }
 
@@ -164,10 +170,12 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 	item.Selected = !item.Selected
 
 	globalIdx := -1
+
 	allWaitItems := m.List.Items()
 	for i, itm := range allWaitItems {
 		if itm.(Item).Value == item.Value {
 			globalIdx = i
+
 			break
 		}
 	}
@@ -178,6 +186,7 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 
 	return m, nil
 }
+
 func (m Model) toggleAll() (Model, tea.Cmd) {
 	visibleItems := m.List.VisibleItems()
 	if len(visibleItems) == 0 {
@@ -186,12 +195,15 @@ func (m Model) toggleAll() (Model, tea.Cmd) {
 
 	targetState := true
 	allVisibleSelected := true
+
 	for _, i := range visibleItems {
 		if !i.(Item).Selected {
 			allVisibleSelected = false
+
 			break
 		}
 	}
+
 	if allVisibleSelected {
 		targetState = false
 	}
@@ -202,6 +214,7 @@ func (m Model) toggleAll() (Model, tea.Cmd) {
 	}
 
 	fullList := m.List.Items()
+
 	var cmds []tea.Cmd
 
 	for idx, i := range fullList {

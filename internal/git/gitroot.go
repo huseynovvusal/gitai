@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	"github.com/go-git/go-git/v5"
@@ -16,7 +17,7 @@ func GetGitRoot() (string, error) {
 func findGitRoot(startPath string) (string, error) {
 	path, err := filepath.Abs(startPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
 	for {
@@ -29,6 +30,7 @@ func findGitRoot(startPath string) (string, error) {
 		if parent == path {
 			return "", errors.New("not a git repository")
 		}
+
 		path = parent
 	}
 }

@@ -5,53 +5,52 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
-
-	"github.com/sourcegraph/go-diff/diff"
 )
 
+// Finding represents a security match in a diff.
 type Finding struct {
 	File string
 	Line int
 	Text string
 }
 
+// CheckDiffSafety scans a diff for sensitive keywords in added lines.
+// It is designed to be resilient to different diff formats.
 func CheckDiffSafety(diffText string, keywords []string) error {
-	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
-	if err != nil {
-		return err
+	if len(keywords) == 0 {
+		return nil
 	}
 
 	var findings []Finding
-	for _, fd := range fileDiffs {
-		filename := strings.TrimPrefix(fd.NewName, "b/")
-		filename = strings.TrimPrefix(filename, "a/")
+	var currentFile string
+	var currentLine int
 
-		for _, h := range fd.Hunks {
-			lines := strings.Split(string(h.Body), "\n")
-			newLine := int(h.NewStartLine)
-
-			for _, ln := range lines {
-				if ln == "" {
-					continue
-				}
-
-				switch ln[0] {
-				case '+':
-					text := strings.TrimPrefix(ln, "+")
-					if containsKeyword(text, keywords) {
-						findings = append(findings, Finding{File: filename, Line: newLine, Text: strings.TrimSpace(text)})
-					}
-					newLine++
-				case ' ':
-					// context line advances new file line number
-					newLine++
-				case '-':
-					// removed line; does not advance new file line number
-				default:
-					// unknown prefix - ignore
-				}
+	lines := strings.Split(diffText, "\n")
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "+++ "):
+			// Update current file (stripping b/ prefix if present)
+			currentFile = strings.TrimPrefix(strings.TrimSpace(line[4:]), "b/")
+		case strings.HasPrefix(line, "@@ "):
+			// Reset line counter from hunk header: @@ -1,1 +123,1 @@ -> 123
+			currentLine = parseStartLine(line)
+		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
+			// Check added line for keywords
+			content := line[1:]
+			if containsKeyword(content, keywords) {
+				findings = append(findings, Finding{
+					File: currentFile,
+					Line: currentLine,
+					Text: strings.TrimSpace(content),
+				})
 			}
+			currentLine++
+		case strings.HasPrefix(line, " "):
+			// Context line advances line count
+			currentLine++
 		}
 	}
 
@@ -59,26 +58,43 @@ func CheckDiffSafety(diffText string, keywords []string) error {
 		return nil
 	}
 
-	var b strings.Builder
-	cwd, _ := os.Getwd()
-	for _, f := range findings {
-		abs := f.File
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(cwd, abs)
-		}
-		// create file:// URI with an encoded path so terminals like VS Code treat it as a clickable link
-		u := url.URL{Scheme: "file", Path: abs}
-		fileURI := u.String()
-		b.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", fileURI, f.Line, f.Text))
-	}
-
-	return fmt.Errorf("%s", b.String())
+	return formatFindings(findings)
 }
 
-func containsKeyword(s string, keywords []string) bool {
-	ls := strings.ToLower(s)
+func parseStartLine(header string) int {
+	re := regexp.MustCompile(`\+(\d+)`)
+	matches := re.FindStringSubmatch(header)
+	if len(matches) > 1 {
+		val, _ := strconv.Atoi(matches[1])
+		return val
+	}
+	return 0
+}
+
+func formatFindings(findings []Finding) error {
+	var builder strings.Builder
+	currentDir, _ := os.Getwd()
+
+	for _, find := range findings {
+		absPath := find.File
+		if absPath == "" {
+			absPath = "unknown"
+		}
+		if !filepath.IsAbs(absPath) && absPath != "unknown" {
+			absPath = filepath.Join(currentDir, absPath)
+		}
+		// Create file:// URI for clickable terminal links
+		fileURL := url.URL{Scheme: "file", Path: absPath}
+		builder.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", fileURL.String(), find.Line, find.Text))
+	}
+
+	return fmt.Errorf("sensitive data found:\n%s", builder.String())
+}
+
+func containsKeyword(line string, keywords []string) bool {
+	lowerLine := strings.ToLower(line)
 	for _, kw := range keywords {
-		if strings.Contains(ls, kw) {
+		if strings.Contains(lowerLine, strings.ToLower(kw)) {
 			return true
 		}
 	}

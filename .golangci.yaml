@@ -1,0 +1,35 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - misspell
+    - unparam
+    - prealloc
+    - nakedret
+    - copyloopvar
+    - gocritic
+    - bodyclose
+    - contextcheck
+    - nilnil
+    - wrapcheck
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    wrapcheck:
+      ignore-package-globs:
+        - huseynovvusal/gitai/internal/git
+        - huseynovvusal/gitai/internal/ai
+        - huseynovvusal/gitai/internal/security
+        - huseynovvusal/gitai/internal/config

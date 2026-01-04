@@ -5,19 +5,21 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/security"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
 
 type aiDoneMsg struct {
 	message string
+	version string
 }
 
 type aiErrorMsg struct {
@@ -34,9 +36,10 @@ type pushResultMsg struct {
 }
 
 type commitSecurityWarningMsg struct {
-	err    error
-	diff   string
-	status string
+	err     error
+	diff    string
+	status  string
+	version string
 }
 
 type editorFinishedMsg struct {
@@ -58,16 +61,6 @@ const (
 	StateEditing                      // Internal editor active
 )
 
-type GitDiffStatus interface {
-	GetChangesForFiles(ctx context.Context, files []string) (string, error)
-	GetStatusForFiles(ctx context.Context, files []string) (string, error)
-}
-
-type GitCommitter interface {
-	Commit(ctx context.Context, files []string, message string) error
-	Push(ctx context.Context, remoteName string) (string, error)
-}
-
 type messageGitService interface {
 	GitDiffStatus
 	GitCommitter
@@ -85,6 +78,7 @@ type AIMessageModel struct {
 	config        MessageConfig
 	savedDiff     string
 	savedStatus   string
+	savedVersion  string
 	ctx           context.Context
 	textArea      textarea.Model
 	hint          string
@@ -134,44 +128,49 @@ type runAIParams struct {
 
 func runAIAsync(p runAIParams) tea.Cmd {
 	return func() tea.Msg {
-		diff, err := p.gitService.GetChangesForFiles(p.ctx, p.files)
+		diff, err := p.gitService.GetChangesForFiles(p.files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		status, err := p.gitService.GetStatusForFiles(p.ctx, p.files)
+		status, err := p.gitService.GetStatusForFiles(p.files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
+
+		version := git.ExtractVersionFromDiff(diff)
 
 		err = security.CheckDiffSafety(diff, p.securityKeywords)
 		if err != nil {
-			return commitSecurityWarningMsg{err: err, diff: diff, status: status}
+			return commitSecurityWarningMsg{err: err, diff: diff, status: status, version: version}
 		}
 
-		commitMessage, err := p.generator.Generate(p.ctx, diff, status, p.hint)
+		commitMessage, err := p.generator.Generate(p.ctx, diff, status, p.hint, version)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
-		return aiDoneMsg{message: commitMessage}
+
+		return aiDoneMsg{message: commitMessage, version: version}
 	}
 }
 
 // runGenerateAfterWarningAsync resumes commit message generation using the
 // previously saved diff/status after the user confirmed the warning.
-func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessageGenerator, diff, status, hint string) tea.Cmd {
+func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessageGenerator, diff, status, hint, version string) tea.Cmd {
 	return func() tea.Msg {
-		commitMessage, err := generator.Generate(ctx, diff, status, hint)
+		commitMessage, err := generator.Generate(ctx, diff, status, hint, version)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
-		return aiDoneMsg{message: commitMessage}
+
+		return aiDoneMsg{message: commitMessage, version: version}
 	}
 }
 
-func runCommitAsync(ctx context.Context, gs messageGitService, files []string, message string) tea.Cmd {
+func runCommitAsync(gs messageGitService, files []string, message string) tea.Cmd {
 	return func() tea.Msg {
-		err := gs.Commit(ctx, files, message)
+		err := gs.Commit(files, message)
+
 		return commitResultMsg{err: err}
 	}
 }
@@ -179,6 +178,7 @@ func runCommitAsync(ctx context.Context, gs messageGitService, files []string, m
 func runPushAsync(ctx context.Context, gs messageGitService, remote string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := gs.Push(ctx, remote)
+
 		return pushResultMsg{err: err, output: out}
 	}
 }
@@ -192,8 +192,10 @@ func openEditor(content string, editorCmd string) tea.Cmd {
 	if _, err := f.WriteString(content); err != nil {
 		f.Close()
 		os.Remove(f.Name())
+
 		return func() tea.Msg { return aiErrorMsg{err: err} }
 	}
+
 	f.Close()
 
 	editor := editorCmd
@@ -202,15 +204,26 @@ func openEditor(content string, editorCmd string) tea.Cmd {
 		if editor == "" {
 			editor = os.Getenv("VISUAL")
 		}
+
 		if editor == "" {
 			editor = "vim"
 		}
 	}
 
 	parts := strings.Fields(editor)
+
 	var c *exec.Cmd
+
 	if len(parts) > 0 {
-		args := append(parts[1:], f.Name())
+		// 1. Make a new slice with enough capacity
+		args := make([]string, 0, len(parts))
+
+		// 2. Copy the existing parts
+		args = append(args, parts[1:]...)
+
+		// 3. Append the new item
+		args = append(args, f.Name())
+
 		c = exec.Command(parts[0], args...)
 	} else {
 		c = exec.Command(editor, f.Name())
@@ -238,20 +251,24 @@ func (m *AIMessageModel) Init() tea.Cmd {
 func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle internal editor state
 	if m.state == StateEditing {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
+		if msg, ok := msg.(tea.KeyMsg); ok {
 			switch msg.String() {
 			case "esc":
 				m.state = StateGenerated
+
 				return m, nil
 			case "ctrl+s":
 				m.commitMessage = m.textArea.Value()
 				m.state = StateGenerated
+
 				return m, nil
 			}
 		}
+
 		var cmd tea.Cmd
+
 		m.textArea, cmd = m.textArea.Update(msg)
+
 		return m, cmd
 	}
 
@@ -262,17 +279,20 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "x":
 			m.cancel = true
+
 			return m, tea.Quit
 		case "y", "enter":
 			if m.state == StateSecurityWarning {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, runGenerateAfterWarningAsync(m.ctx, m.generator, m.savedDiff, m.savedStatus, m.hint)
+
+				return m, runGenerateAfterWarningAsync(m.ctx, m.generator, m.savedDiff, m.savedStatus, m.hint, m.savedVersion)
 			}
 		case "n":
 			if m.state == StateSecurityWarning {
 				m.state = StateError
 				m.errMsg = "Commit cancelled by user due to security findings"
+
 				return m, nil
 			}
 		case "c":
@@ -280,13 +300,14 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StateCommitting
 				m.errMsg = ""
 
-				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.ctx, m.gitService, m.files, m.commitMessage))
+				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.gitService, m.files, m.commitMessage))
 			}
 		case "p":
 			// allow pushing only when we've committed
 			if m.state == StateCommitted {
 				m.state = StatePushing
 				m.errMsg = ""
+
 				return m, tea.Batch(m.spinner.Tick, runPushAsync(m.ctx, m.gitService, "origin"))
 			}
 		case "e":
@@ -295,6 +316,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = StateEditing
 					m.textArea.SetValue(m.commitMessage)
 					m.textArea.Focus()
+
 					return m, textarea.Blink
 				} else {
 					return m, openEditor(m.commitMessage, m.config.EditorMode)
@@ -304,6 +326,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateGenerated {
 				m.state = StateGenerating
 				m.errMsg = ""
+
 				return m, tea.Batch(m.spinner.Tick, runAIAsync(runAIParams{
 					ctx:              m.ctx,
 					generator:        m.generator,
@@ -316,65 +339,84 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
+
 		m.spinner, cmd = m.spinner.Update(msg)
+
 		return m, cmd
 
 	case aiDoneMsg:
 		m.commitMessage = msg.message
+		m.savedVersion = msg.version
 		m.state = StateGenerated
+
 		return m, nil
 
 	case aiErrorMsg:
 		m.state = StateError
 		m.errMsg = msg.err.Error()
+
 		return m, nil
 	case commitResultMsg:
 		if msg.err != nil {
 			m.state = StateError
 			m.errMsg = msg.err.Error()
+
 			return m, nil
 		}
 
 		m.state = StateCommitted
 		m.errMsg = ""
+
 		return m, nil
 
 	case pushResultMsg:
 		if msg.err != nil {
 			m.state = StateError
 			m.errMsg = msg.err.Error()
+
 			return m, nil
 		}
+
 		m.state = StatePushed
 		m.pushOutput = msg.output
 		m.errMsg = ""
+
 		return m, tea.Quit
 	case commitSecurityWarningMsg:
 		if msg.err != nil {
 			// save context so we can resume generation if the user confirms
 			m.savedDiff = msg.diff
 			m.savedStatus = msg.status
+			m.savedVersion = msg.version
 			m.state = StateSecurityWarning
 			m.errMsg = msg.err.Error()
+
 			return m, nil
 		}
 	case editorFinishedMsg:
 		if msg.err != nil {
 			m.state = StateError
 			m.errMsg = msg.err.Error()
+
 			return m, nil
 		}
 
-		content, err := os.ReadFile(msg.filename)
+		content, err := os.ReadFile(filepath.Clean(msg.filename))
+
 		os.Remove(msg.filename)
 
 		if err != nil {
+
 			m.state = StateError
-			m.errMsg = err.Error()
+
+			m.errMsg = fmt.Errorf("failed to read commit message: %w", err).Error()
+
 			return m, nil
+
 		}
 
 		m.commitMessage = strings.TrimSpace(string(content))
+
 		return m, nil
 	}
 
@@ -398,41 +440,51 @@ func (m *AIMessageModel) View() string {
 
 	case StateError:
 		var b strings.Builder
+
 		header := shared.HeaderStyle.Render("Commit failed:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(shared.ErrorStyle.Render(m.errMsg) + "\n")
 		b.WriteString("\n[x] Cancel / [q] Quit\n")
+
 		return b.String()
 
 	case StateCommitted:
 		var b strings.Builder
+
 		header := shared.HeaderStyle.Render("Committed successfully:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
 		b.WriteString("\n[p] Push   [x] Cancel\n")
+
 		return b.String()
 
 	case StatePushed:
 		var b strings.Builder
+
 		header := shared.HeaderStyle.Render("Pushed successfully:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
+
 		return b.String()
 
 	case StateGenerated:
 		var b strings.Builder
+
 		header := shared.HeaderStyle.Render("AI commit message suggestion:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
 		b.WriteString("\n[e] Edit   [r] Regenerate   [c] Commit   [x] Cancel\n")
+
 		return b.String()
 	case StateSecurityWarning:
 		var b strings.Builder
+
 		header := shared.HeaderStyle.Render("Warning, potential sensitive data detected in added lines:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.errMsg + "\n")
 		b.WriteString("\nDo you wish to continue?\n")
 		b.WriteString("\n[Y] yes   [n] no\n")
+
 		return b.String()
 	case StateEditing:
 		return fmt.Sprintf(

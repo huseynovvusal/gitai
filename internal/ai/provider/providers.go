@@ -4,19 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
 	"github.com/openai/openai-go/v2/packages/param"
 	geminicli "github.com/yubiquita/gemini-cli-wrapper"
 	"google.golang.org/genai"
-	"os/exec"
-	"strings"
-	"time"
 )
 
 // ParseProvider parses a string into a Provider (case-insensitive).
-func ParseProvider(s string) (Provider, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
+func ParseProvider(str string) (Provider, error) {
+	switch strings.ToLower(strings.TrimSpace(str)) {
 	case "gpt", "openai", "gpt3", "gpt3.5", "gpt4":
 		return ProviderGPT, nil
 	case "gemini", "google":
@@ -28,7 +29,7 @@ func ParseProvider(s string) (Provider, error) {
 	case "", "none":
 		return ProviderNone, nil
 	default:
-		return ProviderNone, fmt.Errorf("unknown provider: %s", s)
+		return ProviderNone, fmt.Errorf("unknown provider: %s", str)
 	}
 }
 
@@ -39,10 +40,12 @@ type GPTProvider struct {
 	temperature float64
 }
 
+// NewGPTProvider creates a new GPTProvider.
 func NewGPTProvider(apiKey string, maxTokens int64, temperature float64) *GPTProvider {
 	return &GPTProvider{apiKey: apiKey, maxTokens: maxTokens, temperature: temperature}
 }
 
+// GenerateContent generates content using OpenAI.
 func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
 	if p.apiKey == "" {
 		return "", ErrAPIKeyNotSet
@@ -61,7 +64,7 @@ func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMe
 	})
 
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("openai request failed: %w", err)
 	}
 
 	if len(res.Choices) == 0 {
@@ -78,10 +81,12 @@ type GeminiProvider struct {
 	temperature float32
 }
 
+// NewGeminiProvider creates a new GeminiProvider.
 func NewGeminiProvider(apiKey string, maxTokens int32, temperature float32) *GeminiProvider {
 	return &GeminiProvider{apiKey: apiKey, maxTokens: maxTokens, temperature: temperature}
 }
 
+// GenerateContent generates content using Google Gemini.
 func (p *GeminiProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
 	if p.apiKey == "" {
 		return "", ErrAPIKeyNotSet
@@ -91,33 +96,31 @@ func (p *GeminiProvider) GenerateContent(ctx context.Context, systemMessage, use
 		APIKey: p.apiKey,
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create gemini client: %w", err)
 	}
 
-	parts := []*genai.Part{
+	contents := []*genai.Content{
 		{
-			Text: systemMessage,
+			Role:  "system",
+			Parts: []*genai.Part{{Text: systemMessage}},
 		},
 		{
-			Text: userMessage,
+			Role:  "user",
+			Parts: []*genai.Part{{Text: userMessage}},
 		},
 	}
-	modelConfig := genai.GenerateContentConfig{Temperature: &p.temperature, MaxOutputTokens: p.maxTokens}
+	modelConfig := &genai.GenerateContentConfig{Temperature: &p.temperature, MaxOutputTokens: p.maxTokens}
 
-	result, err := client.Models.GenerateContent(ctx, "gemini-2.0-flash", []*genai.Content{
-		{
-			Parts: parts,
-		},
-	}, &modelConfig)
+	resp, err := client.Models.GenerateContent(ctx, "gemini-2.0-flash", contents, modelConfig)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("gemini request failed: %w", err)
 	}
 
-	if len(result.Candidates) == 0 {
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
 		return "", ErrNoResponse
 	}
 
-	return result.Candidates[0].Content.Parts[0].Text, nil
+	return resp.Candidates[0].Content.Parts[0].Text, nil
 }
 
 // OllamaProvider implements AIProvider for Ollama.
@@ -125,52 +128,50 @@ type OllamaProvider struct {
 	apiPath string
 }
 
+// NewOllamaProvider creates a new OllamaProvider.
 func NewOllamaProvider(apiPath string) *OllamaProvider {
 	return &OllamaProvider{apiPath: apiPath}
 }
 
+// GenerateContent generates content using local Ollama.
 func (p *OllamaProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
 	if p.apiPath == "" {
 		return "", ErrOllamaPathMissing
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	tCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	prompt := strings.Join([]string{systemMessage, userMessage}, "\n\n")
-
-	cmd := exec.CommandContext(ctx, p.apiPath, "run", "llama3.1:8b", prompt)
-
+	prompt := fmt.Sprintf("%s\n\n%s", systemMessage, userMessage)
+	cmd := exec.CommandContext(tCtx, p.apiPath, "run", "llama3.1:8b", prompt)
 	out, err := cmd.CombinedOutput()
 
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return "", fmt.Errorf("ollama command timed out")
+	if errors.Is(tCtx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("ollama command timed out: %w", tCtx.Err())
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("ollama command failed: %v, output: %s", err, string(out))
+		return "", fmt.Errorf("ollama command failed: %w, output: %s", err, string(out))
 	}
 
 	return string(out), nil
 }
 
 // GeminiCLIProvider implements AIProvider for Gemini CLI Wrapper.
-type GeminiCLIProvider struct {
-}
+type GeminiCLIProvider struct{}
 
+// NewGeminiCLIProvider creates a new GeminiCLIProvider.
 func NewGeminiCLIProvider() *GeminiCLIProvider {
 	return &GeminiCLIProvider{}
 }
 
+// GenerateContent generates content using Gemini CLI.
 func (p *GeminiCLIProvider) GenerateContent(_ context.Context, systemMessage, userMessage string) (string, error) {
 	prompt := fmt.Sprintf("System: %s\nUser: %s", systemMessage, userMessage)
-
 	client := geminicli.NewClient()
-
 	resp, err := client.Execute(prompt)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("geminicli execution failed: %w", err)
 	}
-
 	return resp, nil
 }

@@ -5,14 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
+	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -24,47 +26,47 @@ import (
 // ErrOutsideRepo is returned when a provided path is not within the git repository.
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
-// GitService provides methods for interacting with a Git repository.
-type GitService struct{}
+// Service provides methods for interacting with a Git repository.
+type Service struct{}
 
-// NewGitService creates a new GitService instance.
-func NewGitService() *GitService {
-	return &GitService{}
+// NewService creates a new Service instance.
+func NewService() *Service {
+	return &Service{}
 }
 
 // GetStatusForFiles returns the porcelain status of the specified files.
-func (s *GitService) GetStatusForFiles(ctx context.Context, files []string) (string, error) {
-	_, w, _, err := getRepo()
+func (s *Service) GetStatusForFiles(files []string) (string, error) {
+	_, worktree, _, err := getRepo()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to open repository: %w", err)
 	}
 
-	status, err := w.Status()
+	status, err := worktree.Status()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get status: %w", err)
 	}
 
-	var sb strings.Builder
-	for _, f := range files {
-		if rel, err := toRel(f); err == nil {
+	var builder strings.Builder
+	for _, file := range files {
+		if rel, err := toRel(file); err == nil {
 			if st, ok := status[rel]; ok {
-				sb.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(st.Staging), formatStatusCode(st.Worktree), rel))
+				builder.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(st.Staging), formatStatusCode(st.Worktree), rel))
 			}
 		}
 	}
-	return sb.String(), nil
+	return builder.String(), nil
 }
 
 // GetChangedFiles returns a sorted list of all modified, added, or deleted files in the repository.
-func (s *GitService) GetChangedFiles(ctx context.Context) ([]string, error) {
-	_, w, _, err := getRepo()
+func (s *Service) GetChangedFiles() ([]string, error) {
+	_, worktree, _, err := getRepo()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
 
-	status, err := w.Status()
+	status, err := worktree.Status()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get status: %w", err)
 	}
 
 	var changed []string
@@ -78,14 +80,14 @@ func (s *GitService) GetChangedFiles(ctx context.Context) ([]string, error) {
 }
 
 // GetChangesForFiles generates a unified diff for the specified files against the HEAD commit.
-func (s *GitService) GetChangesForFiles(ctx context.Context, files []string) (string, error) {
-	r, _, _, err := getRepo()
+func (s *Service) GetChangesForFiles(files []string) (string, error) {
+	repo, _, _, err := getRepo()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to open repository: %w", err)
 	}
 
-	headTree, _ := getHeadTree(r)
-	var sb strings.Builder
+	headTree, _ := getHeadTree(repo)
+	var builder strings.Builder
 
 	for _, file := range files {
 		rel, err := toRel(file)
@@ -102,109 +104,126 @@ func (s *GitService) GetChangesForFiles(ctx context.Context, files []string) (st
 			}
 		}
 
-		newBytes, err := os.ReadFile(file)
+		newBytes, err := os.ReadFile(filepath.Clean(file))
 		newText := string(newBytes)
 		isDeleted := err != nil
 
 		if isNew && isDeleted {
 			continue
 		}
-		sb.WriteString(generateDiffString(rel, oldText, newText, isNew, isDeleted))
+		builder.WriteString(generateDiffString(rel, oldText, newText, isNew, isDeleted))
 	}
-	return sb.String(), nil
+	return builder.String(), nil
 }
 
 // Commit stages the specified files and creates a new commit with the given message.
-func (s *GitService) Commit(ctx context.Context, files []string, message string) error {
-	r, w, _, err := getRepo()
+func (s *Service) Commit(files []string, message string) error {
+	repo, worktree, _, err := getRepo()
+	if err != nil {
+		return fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	for _, file := range files {
+		rel, err := toRel(file)
+		if err != nil {
+			return err
+		}
+		if _, err := worktree.Add(rel); err != nil {
+			return fmt.Errorf("failed to add file %s: %w", rel, err)
+		}
+	}
+
+	sig, err := s.getAuthorSignature(repo)
 	if err != nil {
 		return err
 	}
 
-	for _, f := range files {
-		rel, err := toRel(f)
-		if err != nil {
-			return err
-		}
-		if _, err := w.Add(rel); err != nil {
-			return err
-		}
-	}
-
-	user, email := "Gitai User", "gitai@example.com"
-	if cfg, err := r.Config(); err == nil {
-		if cfg.User.Name != "" {
-			user = cfg.User.Name
-		}
-		if cfg.User.Email != "" {
-			email = cfg.User.Email
-		}
-	}
-
-	// Fallback to global config if local is empty
-	if user == "Gitai User" || email == "gitai@example.com" {
-		if global, err := config.LoadConfig(config.GlobalScope); err == nil {
-			if user == "Gitai User" && global.User.Name != "" {
-				user = global.User.Name
-			}
-			if email == "gitai@example.com" && global.User.Email != "" {
-				email = global.User.Email
-			}
-		}
-	}
-
-	_, err = w.Commit(message, &git.CommitOptions{
-		Author: &object.Signature{Name: user, Email: email, When: time.Now()},
+	_, err = worktree.Commit(message, &git.CommitOptions{
+		Author: sig,
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to create commit: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) getAuthorSignature(r *git.Repository) (*object.Signature, error) {
+	cfg, _ := r.Config()
+	name, email := getNameEmail(cfg)
+
+	if name == "" || email == "" {
+		global, _ := gitconfig.LoadConfig(gitconfig.GlobalScope)
+		gName, gEmail := getNameEmail(global)
+		if name == "" {
+			name = gName
+		}
+		if email == "" {
+			email = gEmail
+		}
+	}
+
+	if name == "" || email == "" {
+		return nil, errors.New("git user name or email not found in local or global config")
+	}
+
+	return &object.Signature{
+		Name:  name,
+		Email: email,
+		When:  time.Now(),
+	}, nil
+}
+
+func getNameEmail(c *gitconfig.Config) (string, string) {
+	if c == nil {
+		return "", ""
+	}
+	return c.User.Name, c.User.Email
 }
 
 // Push pushes the current branch to the specified remote.
-func (s *GitService) Push(ctx context.Context, remoteName string) (string, error) {
-	r, _, _, err := getRepo()
+func (s *Service) Push(ctx context.Context, remoteName string) (string, error) {
+	repo, _, _, err := getRepo()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to open repository: %w", err)
 	}
 
-	remote, err := r.Remote(remoteName)
+	remote, err := repo.Remote(remoteName)
 	if err != nil {
-		return "", fmt.Errorf("remote '%s' not found", remoteName)
+		return "", fmt.Errorf("remote '%s' not found: %w", remoteName, err)
 	}
 
 	urls := remote.Config().URLs
 	if len(urls) == 0 {
-		return "", errors.New("origin has no URLs")
+		return "", fmt.Errorf("remote '%s' has no URLs", remoteName)
 	}
 
-	auth, err := resolveAuth(urls[0])
-	if err != nil {
-		return "", err
-	}
+	auth := resolveAuth(urls[0])
 
-	err = r.PushContext(ctx, &git.PushOptions{Auth: auth})
+	err = repo.PushContext(ctx, &git.PushOptions{Auth: auth})
 	if err != nil {
 		if errors.Is(err, git.NoErrAlreadyUpToDate) {
 			return "Already up-to-date", nil
 		}
-		return "", err
+		return "", fmt.Errorf("failed to push: %w", err)
 	}
 	return "Push successful", nil
 }
 
 // ResolvePath returns a list of all repository files within the given path.
-func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, error) {
-	r, w, root, err := getRepo()
+func (s *Service) ResolvePath(path string) ([]string, error) {
+	repo, worktree, root, err := getRepo()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
 
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
+
 	rel, err := filepath.Rel(root, abs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get relative path: %w", err)
 	}
 
 	info, err := os.Stat(abs)
@@ -215,8 +234,8 @@ func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, er
 		return []string{rel}, nil
 	}
 
-	status, _ := w.Status()
-	headTree, _ := getHeadTree(r)
+	status, _ := worktree.Status()
+	headTree, _ := getHeadTree(repo)
 
 	prefix := rel
 	if prefix == "." {
@@ -251,64 +270,135 @@ func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, er
 	return results, nil
 }
 
-// GetPullRequestURL generates a web URL to create a new pull request for the current branch.
-func (s *GitService) GetPullRequestURL(ctx context.Context, remoteName string) (string, error) {
-	r, _, _, err := getRepo()
-	if err != nil {
-		return "", err
+// ExtractVersionFromDiff scans a unified diff for lines that look like version updates.
+// It returns a string representing the change, e.g., "0.4.0 -> 0.5.0".
+func ExtractVersionFromDiff(diffText string) string {
+	lines := strings.Split(diffText, "\n")
+
+	// Improved regex: look for something that starts with a digit,
+	// contains at least one dot, and then more digits/dots/alphanumerics.
+	versionRegex := regexp.MustCompile(`([0-9]+\.[0-9][0-9a-z.-]*)`)
+
+	var oldVersion, newVersion string
+	var currentFile string
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "diff --git") {
+			parts := strings.Fields(line)
+			if len(parts) >= 4 {
+				currentFile = filepath.Base(parts[3])
+			}
+			continue
+		}
+
+		// Only look for versions in specific files likely to contain project versioning
+		// and EXCLUDE test files explicitly.
+		isPotentialVersionFile := (strings.EqualFold(currentFile, "VERSION") ||
+			strings.EqualFold(currentFile, "package.json") ||
+			strings.EqualFold(currentFile, "go.mod") ||
+			strings.EqualFold(currentFile, "Cargo.toml") ||
+			strings.EqualFold(currentFile, "pyproject.toml") ||
+			strings.EqualFold(currentFile, "composer.json") ||
+			strings.EqualFold(currentFile, "Gemfile") ||
+			strings.EqualFold(currentFile, "mix.exs") ||
+			strings.EqualFold(currentFile, "version.rb") ||
+			strings.EqualFold(currentFile, "version.py") ||
+			strings.EqualFold(currentFile, "setup.py") ||
+			strings.EqualFold(currentFile, "CMakeLists.txt")) &&
+			!strings.Contains(strings.ToLower(currentFile), "test") &&
+			!strings.Contains(strings.ToLower(currentFile), "_spec")
+
+		lowerLine := strings.ToLower(line)
+		containsVersionKeyword := strings.Contains(lowerLine, "version") &&
+			!strings.Contains(lowerLine, "versioning") &&
+			!strings.Contains(strings.ToLower(currentFile), "test")
+
+		if isPotentialVersionFile || containsVersionKeyword {
+			// Extract from a removed line
+			if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+				content := line[1:]
+				if matches := versionRegex.FindStringSubmatch(content); len(matches) > 1 {
+					oldVersion = matches[1]
+				}
+			}
+			// Extract from added line
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				content := line[1:]
+				if matches := versionRegex.FindStringSubmatch(content); len(matches) > 1 {
+					newVersion = matches[1]
+				}
+			}
+		}
+
+		// If we found both in the same file hunk, and they are different, we're likely done
+		if oldVersion != "" && newVersion != "" && oldVersion != newVersion {
+			return fmt.Sprintf("%s -> %s", oldVersion, newVersion)
+		}
 	}
 
-	head, err := r.Head()
+	return newVersion
+}
+
+// GetPullRequestURL generates a web URL to create a new pull request for the current branch.
+func (s *Service) GetPullRequestURL(remoteName string) (string, error) {
+	repo, _, _, err := getRepo()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("failed to get HEAD: %w", err)
 	}
 	branch := head.Name().Short()
 	if !head.Name().IsBranch() {
 		branch = head.Hash().String()
 	}
 
-	rem, err := r.Remote(remoteName)
-	if err != nil || len(rem.Config().URLs) == 0 {
-		return "", fmt.Errorf("no remote %s", remoteName)
+	remote, err := repo.Remote(remoteName)
+	if err != nil || len(remote.Config().URLs) == 0 {
+		return "", fmt.Errorf("no remote %s found", remoteName)
 	}
 
-	url := rem.Config().URLs[0]
-	url = normalizeGitURL(url)
+	remoteUrl := remote.Config().URLs[0]
+	remoteUrl = normalizeGitURL(remoteUrl)
 
 	switch {
-	case strings.Contains(url, "github.com"):
-		return fmt.Sprintf("%s/pull/new/%s", url, branch), nil
-	case strings.Contains(url, "gitlab.com"):
-		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", url, branch), nil
-	case strings.Contains(url, "bitbucket.org"):
-		return fmt.Sprintf("%s/pull-requests/new?source=%s", url, branch), nil
+	case strings.Contains(remoteUrl, "github.com"):
+		return fmt.Sprintf("%s/pull/new/%s", remoteUrl, branch), nil
+	case strings.Contains(remoteUrl, "gitlab.com"):
+		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", remoteUrl, branch), nil
+	case strings.Contains(remoteUrl, "bitbucket.org"):
+		return fmt.Sprintf("%s/pull-requests/new?source=%s", remoteUrl, branch), nil
 	default:
-		return "", fmt.Errorf("unknown host: %s", url)
+		return "", fmt.Errorf("unknown host: %s", remoteUrl)
 	}
 }
 
 // --- Internal Helper Functions ---
 
-func resolveAuth(url string) (transport.AuthMethod, error) {
-	if strings.HasPrefix(url, "http") {
-		return nil, nil
+func resolveAuth(urlStr string) transport.AuthMethod {
+	if strings.HasPrefix(urlStr, "http") {
+		return nil
 	}
 
-	if !strings.HasPrefix(url, "ssh://") && !strings.Contains(url, "@") {
-		return nil, nil
+	if !strings.HasPrefix(urlStr, "ssh://") && !strings.Contains(urlStr, "@") {
+		return nil
 	}
 
 	user := "git"
-	if parts := strings.Split(url, "@"); len(parts) > 1 {
+	if parts := strings.Split(urlStr, "@"); len(parts) > 1 {
 		user = parts[0]
 		if strings.Contains(user, "://") {
 			user = strings.Split(user, "://")[1]
 		}
 	}
 
-	keyCallback := func() (signers []ssh.Signer, err error) {
+	keyCallback := func() ([]ssh.Signer, error) {
+		var signers []ssh.Signer
 		if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-			if conn, err := net.Dial("unix", sock); err == nil {
+			dialer := &net.Dialer{}
+			if conn, err := dialer.Dial("unix", sock); err == nil {
 				if s, err := agent.NewClient(conn).Signers(); err == nil {
 					signers = append(signers, s...)
 				}
@@ -323,7 +413,7 @@ func resolveAuth(url string) (transport.AuthMethod, error) {
 				continue
 			}
 
-			if key, err := os.ReadFile(filepath.Join(home, ".ssh", f.Name())); err == nil {
+			if key, err := os.ReadFile(filepath.Join(home, ".ssh", filepath.Clean(f.Name()))); err == nil {
 				if signer, err := ssh.ParsePrivateKey(key); err == nil {
 					signers = append(signers, signer)
 				}
@@ -343,36 +433,39 @@ func resolveAuth(url string) (transport.AuthMethod, error) {
 
 	auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
 
-	return auth, nil
+	return auth
 }
 
 func getRepo() (*git.Repository, *git.Worktree, string, error) {
 	root, err := GetGitRoot()
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, "", fmt.Errorf("failed to get git root: %w", err)
 	}
-	r, err := git.PlainOpen(root)
+	repo, err := git.PlainOpen(root)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, "", fmt.Errorf("failed to open git repo at %s: %w", root, err)
 	}
-	w, err := r.Worktree()
-	return r, w, root, err
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("failed to get worktree: %w", err)
+	}
+	return repo, worktree, root, nil
 }
 
 func toRel(path string) (string, error) {
 	root, err := GetGitRoot()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get git root: %w", err)
 	}
 
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
 	rel, err := filepath.Rel(root, abs)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get relative path: %w", err)
 	}
 
 	if strings.HasPrefix(rel, "..") {
@@ -381,19 +474,22 @@ func toRel(path string) (string, error) {
 	return rel, nil
 }
 
-func getHeadTree(r *git.Repository) (*object.Tree, error) {
-	head, err := r.Head()
+func getHeadTree(repo *git.Repository) (*object.Tree, error) {
+	head, err := repo.Head()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
-	c, err := r.CommitObject(head.Hash())
+	commitObj, err := repo.CommitObject(head.Hash())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get commit object: %w", err)
 	}
-	return c.Tree()
+	tree, err := commitObj.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree: %w", err)
+	}
+	return tree, nil
 }
 
-// formatStatusCode maps a git status code to its porcelain rune representation.
 func formatStatusCode(c git.StatusCode) rune {
 	switch c {
 	case git.Unmodified:
@@ -421,56 +517,44 @@ func formatStatusCode(c git.StatusCode) rune {
 // simpler custom formats like "M file.go") because LLMs perform significantly
 // better with it. The standard git headers act as strong "mental anchors" that
 // prevent context bleeding between files and align with the model's training data.
-func generateDiffString(path, old, new string, isNew, isDel bool) string {
+func generateDiffString(path, oldText, newText string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
-	diffs := dmp.DiffMain(old, new, false)
+	patches := dmp.PatchMake(oldText, newText)
+	patchText := dmp.PatchToText(patches)
+
+	// Normalize the text to avoid URL encoding
+	decoded, _ := url.PathUnescape(patchText)
+
+	diffs := dmp.DiffMain(oldText, newText, false)
 	dmp.DiffCleanupSemantic(diffs)
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
-	if isNew {
-		sb.WriteString(fmt.Sprintf("new file mode 100644\n--- /dev/null\n+++ b/%s\n", path))
-	} else if isDel {
-		sb.WriteString(fmt.Sprintf("deleted file mode 100644\n--- a/%s\n+++ /dev/null\n", path))
-	} else {
-		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
+	switch {
+	case isNew:
+		builder.WriteString(fmt.Sprintf("new file mode 100644\n--- /dev/null\n+++ b/%s\n", path))
+	case isDel:
+		builder.WriteString(fmt.Sprintf("deleted file mode 100644\n--- a/%s\n+++ /dev/null\n", path))
+	default:
+		builder.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
 
-	for _, d := range diffs {
-		lines := strings.Split(d.Text, "\n")
-		prefix := " "
-		switch d.Type {
-		case diffmatchpatch.DiffInsert:
-			prefix = "+"
-		case diffmatchpatch.DiffDelete:
-			prefix = "-"
-		}
+	builder.WriteString(decoded)
 
-		for i, line := range lines {
-			if i == len(lines)-1 && line == "" {
-				continue
-			}
-			sb.WriteString(prefix)
-			sb.WriteString(line)
-			sb.WriteString("\n")
-		}
-	}
-
-	return sb.String()
+	return builder.String()
 }
 
-// normalizeGitURL converts git SSH or git:// URLs to an HTTPS web URL format.
-func normalizeGitURL(url string) string {
-	url = strings.TrimSpace(url)
-	url = strings.TrimSuffix(url, ".git")
-	if strings.HasPrefix(url, "git@") {
-		url = "https://" + strings.Replace(strings.TrimPrefix(url, "git@"), ":", "/", 1)
-	} else if strings.HasPrefix(url, "ssh://") {
-		url = "https://" + strings.TrimPrefix(strings.Split(url, "@")[1], ":")
+func normalizeGitURL(rawURL string) string {
+	cleanURL := strings.TrimSpace(rawURL)
+	cleanURL = strings.TrimSuffix(cleanURL, ".git")
+	if strings.HasPrefix(cleanURL, "git@") {
+		cleanURL = "https://" + strings.Replace(strings.TrimPrefix(cleanURL, "git@"), ":", "/", 1)
+	} else if strings.HasPrefix(cleanURL, "ssh://") {
+		cleanURL = "https://" + strings.TrimPrefix(strings.Split(cleanURL, "@")[1], ":")
 	}
 
-	if !strings.HasPrefix(url, "http") {
-		url = "https://" + url
+	if !strings.HasPrefix(cleanURL, "http") {
+		cleanURL = "https://" + cleanURL
 	}
-	return url
+	return cleanURL
 }

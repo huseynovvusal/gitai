@@ -24,6 +24,7 @@ func TestParseKeywordsCSV(t *testing.T) {
 			if len(result) != len(tt.expected) {
 				t.Fatalf("expected length %d, got %d", len(tt.expected), len(result))
 			}
+
 			for i := range result {
 				if result[i] != tt.expected[i] {
 					t.Errorf("expected %q, got %q", tt.expected[i], result[i])

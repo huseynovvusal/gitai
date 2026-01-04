@@ -64,6 +64,7 @@ func TestHintProcessors(t *testing.T) {
 			if tt.input == "" && got != "" {
 				t.Errorf("Processor(%q) = %q, want empty string", tt.input, got)
 			}
+
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
 					t.Errorf("Processor(%q) = %q, missing substring %q", tt.input, got, want)

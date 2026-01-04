@@ -4,14 +4,14 @@ import (
 	"context"
 	_ "embed"
 	"errors"
-	"huseynovvusal/gitai/internal/ai/provider"
-	"huseynovvusal/gitai/internal/ai/test_prompts"
 	"testing"
 
 	"github.com/pkoukk/tiktoken-go"
+	"huseynovvusal/gitai/internal/ai/provider"
+	"huseynovvusal/gitai/internal/ai/test_prompts"
 )
 
-// MockProvider is a mock implementation of AIProvider
+// MockProvider is a mock implementation of AIProvider.
 type MockProvider struct {
 	GenerateContentFunc func(ctx context.Context, systemMessage, userMessage string) (string, error)
 }
@@ -20,10 +20,11 @@ func (m *MockProvider) GenerateContent(ctx context.Context, systemMessage, userM
 	if m.GenerateContentFunc != nil {
 		return m.GenerateContentFunc(ctx, systemMessage, userMessage)
 	}
+
 	return "", nil
 }
 
-// Test that errors from provider propagate (e.g., ErrNoResponse)
+// Test that errors from provider propagate (e.g., ErrNoResponse).
 func TestService_Generate_PropagatesError(t *testing.T) {
 	mockProvider := &MockProvider{
 		GenerateContentFunc: func(ctx context.Context, systemMessage, userMessage string) (string, error) {
@@ -33,10 +34,11 @@ func TestService_Generate_PropagatesError(t *testing.T) {
 
 	service := NewService(mockProvider, "-")
 
-	_, err := service.Generate(context.Background(), "diff", "status", "")
+	_, err := service.Generate(context.Background(), "diff", "status", "", "1.0.0")
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
+
 	if !errors.Is(err, provider.ErrNoResponse) {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,6 +81,7 @@ func TestPromptIterations_TokenCounts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var totalTokens int
+
 			for i, s := range tt.candidates {
 				tokens := len(enc.Encode(s, nil, nil))
 				totalTokens += tokens
