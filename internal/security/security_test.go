@@ -3,60 +3,21 @@ package security
 import (
 	"strings"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
-func TestParseKeywordsCSV(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []string
-	}{
-		{"Empty string", "", []string{}},
-		{"Single keyword", "api_key", []string{"api_key"}},
-		{"Multiple keywords", "api_key,password,secret", []string{"api_key", "password", "secret"}},
-		{"Keywords with spaces", " api_key , password ", []string{"api_key", "password"}},
-		{"Mixed case", "API_KEY,PassWord", []string{"api_key", "password"}},
-		{"Trailing comma", "key1,key2,", []string{"key1", "key2"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseKeywordsCSV(tt.input)
-			if len(result) != len(tt.expected) {
-				t.Fatalf("expected length %d, got %d", len(tt.expected), len(result))
-			}
-			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("expected %q, got %q", tt.expected[i], result[i])
-				}
-			}
-		})
-	}
-}
-
-func TestGetSensitiveKeywords(t *testing.T) {
-	viper.Reset()
-	
-	// 1. Default/Empty
-	kw := GetSensitiveKeywords()
-	if len(kw) != 0 {
-		t.Errorf("expected empty keywords, got %v", kw)
-	}
-
-	// 2. Slice from config
-	viper.Set("security.keywords", []string{"key1", "key2"})
-	kw = GetSensitiveKeywords()
-	if len(kw) != 2 || kw[0] != "key1" {
-		t.Errorf("expected [key1 key2], got %v", kw)
-	}
-
-	// 3. Single string with commas (Env var case)
-	viper.Set("security.keywords", "env1,env2")
-	kw = GetSensitiveKeywords()
-	if len(kw) != 2 || kw[0] != "env1" {
-		t.Errorf("expected [env1 env2], got %v", kw)
+func TestCheckDiffSafety_Absolute(t *testing.T) {
+	keywords := []string{"secret"}
+	diff := `diff --git b/a.go b/a.go
+--- a/a.go
++++ b/a.go
+@@ -1,1 +1,1 @@
++my secret`
+	// If we provide an absolute path in the diff, it should skip Join
+	absPath := "/tmp/a.go"
+	diffAbs := strings.Replace(diff, "a.go", absPath, -1)
+	err := CheckDiffSafety(diffAbs, keywords)
+	if err == nil {
+		t.Error("expected error for absolute path diff")
 	}
 }
 
@@ -83,8 +44,7 @@ func TestContainsKeyword(t *testing.T) {
 }
 
 func TestCheckDiffSafety(t *testing.T) {
-	viper.Reset()
-	viper.Set("security.keywords", []string{"api_key", "secret"})
+	keywords := []string{"api_key", "secret"}
 
 	tests := []struct {
 		name        string
@@ -195,7 +155,7 @@ diff --git a/b.go b/b.go
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := CheckDiffSafety(tt.diff)
+			err := CheckDiffSafety(tt.diff, keywords)
 			if tt.expectError {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -212,7 +172,7 @@ diff --git a/b.go b/b.go
 }
 
 func TestCheckDiffSafety_InvalidParse(t *testing.T) {
-	err := CheckDiffSafety("diff --git\n--- a/file\n+++ b/file\n@@ -invalid")
+	err := CheckDiffSafety("diff --git\n--- a/file\n+++ b/file\n@@ -invalid", []string{"secret"})
 	if err != nil {
 		t.Logf("Parse error hit: %v", err)
 	}

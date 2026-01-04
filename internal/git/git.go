@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -31,7 +32,7 @@ func NewGitService() *GitService {
 }
 
 // GetStatusForFiles returns the porcelain status of the specified files.
-func (s *GitService) GetStatusForFiles(files []string) (string, error) {
+func (s *GitService) GetStatusForFiles(ctx context.Context, files []string) (string, error) {
 	_, w, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -45,8 +46,8 @@ func (s *GitService) GetStatusForFiles(files []string) (string, error) {
 	var sb strings.Builder
 	for _, f := range files {
 		if rel, err := toRel(f); err == nil {
-			if s, ok := status[rel]; ok {
-				sb.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(s.Staging), formatStatusCode(s.Worktree), rel))
+			if st, ok := status[rel]; ok {
+				sb.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(st.Staging), formatStatusCode(st.Worktree), rel))
 			}
 		}
 	}
@@ -54,7 +55,7 @@ func (s *GitService) GetStatusForFiles(files []string) (string, error) {
 }
 
 // GetChangedFiles returns a sorted list of all modified, added, or deleted files in the repository.
-func (s *GitService) GetChangedFiles() ([]string, error) {
+func (s *GitService) GetChangedFiles(ctx context.Context) ([]string, error) {
 	_, w, _, err := getRepo()
 	if err != nil {
 		return nil, err
@@ -66,8 +67,8 @@ func (s *GitService) GetChangedFiles() ([]string, error) {
 	}
 
 	var changed []string
-	for path, s := range status {
-		if s.Staging != git.Unmodified || s.Worktree != git.Unmodified {
+	for path, st := range status {
+		if st.Staging != git.Unmodified || st.Worktree != git.Unmodified {
 			changed = append(changed, path)
 		}
 	}
@@ -76,7 +77,7 @@ func (s *GitService) GetChangedFiles() ([]string, error) {
 }
 
 // GetChangesForFiles generates a unified diff for the specified files against the HEAD commit.
-func (s *GitService) GetChangesForFiles(files []string) (string, error) {
+func (s *GitService) GetChangesForFiles(ctx context.Context, files []string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -113,7 +114,7 @@ func (s *GitService) GetChangesForFiles(files []string) (string, error) {
 }
 
 // Commit stages the specified files and creates a new commit with the given message.
-func (s *GitService) Commit(files []string, message string) error {
+func (s *GitService) Commit(ctx context.Context, files []string, message string) error {
 	r, w, _, err := getRepo()
 	if err != nil {
 		return err
@@ -148,7 +149,7 @@ func (s *GitService) Commit(files []string, message string) error {
 }
 
 // Push pushes the current branch to the specified remote.
-func (s *GitService) Push(remoteName string) (string, error) {
+func (s *GitService) Push(ctx context.Context, remoteName string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -169,7 +170,7 @@ func (s *GitService) Push(remoteName string) (string, error) {
 		return "", err
 	}
 
-	err = r.Push(&git.PushOptions{Auth: auth})
+	err = r.PushContext(ctx, &git.PushOptions{Auth: auth})
 	if err != nil {
 		if errors.Is(err, git.NoErrAlreadyUpToDate) {
 			return "Already up-to-date", nil
@@ -180,7 +181,7 @@ func (s *GitService) Push(remoteName string) (string, error) {
 }
 
 // ResolvePath returns a list of all repository files within the given path.
-func (s *GitService) ResolvePath(path string) ([]string, error) {
+func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, error) {
 	r, w, root, err := getRepo()
 	if err != nil {
 		return nil, err
@@ -237,7 +238,7 @@ func (s *GitService) ResolvePath(path string) ([]string, error) {
 }
 
 // GetPullRequestURL generates a web URL to create a new pull request for the current branch.
-func (s *GitService) GetPullRequestURL(remoteName string) (string, error) {
+func (s *GitService) GetPullRequestURL(ctx context.Context, remoteName string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -258,12 +259,7 @@ func (s *GitService) GetPullRequestURL(remoteName string) (string, error) {
 	}
 
 	url := rem.Config().URLs[0]
-	url = strings.TrimSuffix(strings.TrimSpace(url), ".git")
-	if strings.HasPrefix(url, "git@") {
-		url = "https://" + strings.Replace(strings.TrimPrefix(url, "git@"), ":", "/", 1)
-	} else if strings.HasPrefix(url, "ssh://") {
-		url = "https://" + strings.TrimPrefix(strings.Split(url, "@")[1], ":")
-	}
+	url = normalizeGitURL(url)
 
 	switch {
 	case strings.Contains(url, "github.com"):
@@ -275,20 +271,6 @@ func (s *GitService) GetPullRequestURL(remoteName string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown host: %s", url)
 	}
-}
-
-// --- Package level convenience functions ---
-
-var defaultGitService = NewGitService()
-
-func GetStatusForFiles(files []string) (string, error)  { return defaultGitService.GetStatusForFiles(files) }
-func GetChangedFiles() ([]string, error)              { return defaultGitService.GetChangedFiles() }
-func GetChangesForFiles(files []string) (string, error) { return defaultGitService.GetChangesForFiles(files) }
-func Commit(files []string, message string) error      { return defaultGitService.Commit(files, message) }
-func Push(remoteName string) (string, error)           { return defaultGitService.Push(remoteName) }
-func ResolvePath(path string) ([]string, error)        { return defaultGitService.ResolvePath(path) }
-func GetPullRequestURL(remoteName string) (string, error) {
-	return defaultGitService.GetPullRequestURL(remoteName)
 }
 
 // --- Internal Helper Functions ---
@@ -324,8 +306,8 @@ func resolveAuth(url string) (transport.AuthMethod, error) {
 		for _, f := range files {
 			if f.IsDir() || strings.HasSuffix(f.Name(), ".pub") ||
 				strings.HasPrefix(f.Name(), "known_") || strings.HasPrefix(f.Name(), "config") {
-					continue
-				}
+				continue
+			}
 
 			if key, err := os.ReadFile(filepath.Join(home, ".ssh", f.Name())); err == nil {
 				if signer, err := ssh.ParsePrivateKey(key); err == nil {
@@ -418,13 +400,6 @@ func formatStatusCode(c git.StatusCode) rune {
 	}
 }
 
-// generateDiffString creates a unified diff compatible with standard git output.
-//
-// It uses sergi/go-diff to calculate character-level changes and applies
-// DiffCleanupSemantic to group these changes into logical, human-readable blocks.
-// The output includes standard git headers (diff --git, ---, +++) which provide
-// critical context for both security scanning and AI commit message generation.
-// Manual formatting is used instead of library defaults to avoid URL encoding.
 func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
 	diffs := dmp.DiffMain(old, new, false)
@@ -460,10 +435,6 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	}
 
 	return sb.String()
-}
-
-func NormalizeGitURL(url string) string {
-	return normalizeGitURL(url)
 }
 
 func normalizeGitURL(url string) string {

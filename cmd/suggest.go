@@ -4,6 +4,7 @@ import (
 	"context"
 	"huseynovvusal/gitai/internal/ai"
 	"huseynovvusal/gitai/internal/ai/provider"
+	"huseynovvusal/gitai/internal/config"
 	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/tui/suggest"
 	"os"
@@ -18,8 +19,9 @@ var suggestCmd = &cobra.Command{
 	Use:   "suggest [files...]",
 	Short: "Suggest commit messages for changed files using AI",
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ctx := context.Background()
 		gitService := git.NewGitService()
-		files, err := gitService.GetChangedFiles()
+		files, err := gitService.GetChangedFiles(ctx)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
@@ -34,37 +36,48 @@ var suggestCmd = &cobra.Command{
 			return files, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		return getFilteredSuggestions(toComplete, args, files, repoRoot, cwd, gitService), cobra.ShellCompDirectiveNoFileComp
+		return getFilteredSuggestions(ctx, toComplete, args, files, repoRoot, cwd, gitService), cobra.ShellCompDirectiveNoFileComp
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		rootCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		provStr := viper.GetString("ai.provider")
-		providerEnum, err := provider.ParseProvider(provStr)
+		cfg, err := config.LoadConfig(viper.GetViper())
+		if err != nil {
+			cmd.PrintErrln("Error loading config:", err)
+			return
+		}
+
+		providerEnum, err := provider.ParseProvider(cfg.AI.Provider)
 		if err != nil {
 			cmd.PrintErrln("Invalid provider:", err)
 			return
 		}
 
-		aiProvider, err := provider.NewAIProvider(providerEnum)
+		aiProvider, err := provider.NewAIProvider(providerEnum, provider.Config{
+			APIKey:      cfg.AI.APIKey,
+			MaxTokens:   cfg.AI.MaxTokens,
+			Temperature: cfg.AI.Temperature,
+			OllamaPath:  cfg.Ollama.Path,
+		})
 		if err != nil {
 			cmd.PrintErrln("Error creating AI provider:", err)
 			return
 		}
 
-		service := ai.NewService(aiProvider)
-
-		editorMode := viper.GetString("suggest.editor")
-		hint := viper.GetString("suggest.hint")
-		skipHint := viper.GetBool("suggest.no-hint")
+		service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint)
 
 		gitService := git.NewGitService()
 
-		flow := suggest.NewFlow(rootCtx, service, gitService, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
-			WithHint(hint).
-			WithSkipHint(skipHint)
-		flow.Run(args)
+		flowConfig := suggest.FlowConfig{
+			EditorMode:       cfg.Suggest.Editor,
+			SecurityKeywords: cfg.Security.Keywords,
+		}
+
+		flow := suggest.NewFlow(service, gitService, flowConfig, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
+			WithHint(cfg.Suggest.Hint).
+			WithSkipHint(cfg.Suggest.NoHint)
+		flow.Run(rootCtx, args)
 	},
 }
 
@@ -89,13 +102,13 @@ func init() {
 }
 
 type gitService interface {
-	ResolvePath(path string) ([]string, error)
+	ResolvePath(ctx context.Context, path string) ([]string, error)
 }
 
-func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string, gs gitService) []string {
+func getFilteredSuggestions(ctx context.Context, toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string, gs gitService) []string {
 	selectedSet := make(map[string]bool)
 	for _, arg := range selectedArgs {
-		if resolved, err := gs.ResolvePath(arg); err == nil {
+		if resolved, err := gs.ResolvePath(ctx, arg); err == nil {
 			for _, r := range resolved {
 				selectedSet[r] = true
 			}

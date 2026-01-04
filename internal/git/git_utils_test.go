@@ -49,9 +49,9 @@ func TestNormalizeGitURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := NormalizeGitURL(tt.input)
+			result := normalizeGitURL(tt.input)
 			if result != tt.expected {
-				t.Errorf("NormalizeGitURL(%q) = %q; want %q", tt.input, result, tt.expected)
+				t.Errorf("normalizeGitURL(%q) = %q; want %q", tt.input, result, tt.expected)
 			}
 		})
 	}
@@ -158,4 +158,30 @@ func TestGenerateDiffString(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUniqueStrings(t *testing.T) {
+	input := []string{"a", "b", "a", "c", "b"}
+	expected := []string{"a", "b", "c"}
+	res := uniqueStrings(input)
+	if len(res) != 3 {
+		t.Fatalf("expected 3, got %d", len(res))
+	}
+	for i, v := range expected {
+		if res[i] != v {
+			t.Errorf("at %d: expected %s, got %s", i, v, res[i])
+		}
+	}
+}
+
+func uniqueStrings(slice []string) []string {
+	keys := make(map[string]bool)
+	list := make([]string, 0, len(slice))
+	for _, entry := range slice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }

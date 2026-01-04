@@ -29,15 +29,21 @@ type mockGitService struct {
 	prURL           string
 }
 
-func (m *mockGitService) GetStatusForFiles(files []string) (string, error) { return m.statusResponse, nil }
-func (m *mockGitService) GetChangedFiles() ([]string, error)           { return m.changedFiles, nil }
-func (m *mockGitService) GetChangesForFiles(files []string) (string, error) {
+func (m *mockGitService) GetStatusForFiles(ctx context.Context, files []string) (string, error) {
+	return m.statusResponse, nil
+}
+func (m *mockGitService) GetChangedFiles(ctx context.Context) ([]string, error) { return m.changedFiles, nil }
+func (m *mockGitService) GetChangesForFiles(ctx context.Context, files []string) (string, error) {
 	return m.changesResponse, nil
 }
-func (m *mockGitService) Commit(files []string, message string) error { return m.commitErr }
-func (m *mockGitService) Push(remoteName string) (string, error)      { return m.pushResponse, nil }
-func (m *mockGitService) ResolvePath(path string) ([]string, error)   { return m.resolveResponse, nil }
-func (m *mockGitService) GetPullRequestURL(remoteName string) (string, error) {
+func (m *mockGitService) Commit(ctx context.Context, files []string, message string) error { return m.commitErr }
+func (m *mockGitService) Push(ctx context.Context, remoteName string) (string, error) {
+	return m.pushResponse, nil
+}
+func (m *mockGitService) ResolvePath(ctx context.Context, path string) ([]string, error) {
+	return m.resolveResponse, nil
+}
+func (m *mockGitService) GetPullRequestURL(ctx context.Context, remoteName string) (string, error) {
 	return m.prURL, nil
 }
 
@@ -128,7 +134,10 @@ func TestAIMessageModel_States(t *testing.T) {
 	ctx := context.Background()
 	gen := &mockGenerator{response: "feat: add tests"}
 	gs := &mockGitService{}
-	m := NewAIMessageModel(ctx, []string{"test.go"}, gen, gs, "builtin", "hint")
+	m := NewAIMessageModel(ctx, []string{"test.go"}, gen, gs, MessageConfig{
+		EditorMode:       "builtin",
+		SecurityKeywords: []string{"secret"},
+	}, "hint")
 
 	// 1. Initial state & View
 	if m.state != StateGenerating {
@@ -192,7 +201,10 @@ func TestAIMessageModel_States(t *testing.T) {
 func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 	ctx := context.Background()
 	gs := &mockGitService{}
-	m := NewAIMessageModel(ctx, nil, nil, gs, "builtin", "")
+	m := NewAIMessageModel(ctx, nil, nil, gs, MessageConfig{
+		EditorMode:       "builtin",
+		SecurityKeywords: []string{"secret"},
+	}, "")
 
 	// 1. AI Error
 	m2, _ := m.Update(aiErrorMsg{err: context.DeadlineExceeded})
@@ -202,7 +214,10 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 	}
 
 	// 2. Security Warning
-	m = NewAIMessageModel(ctx, nil, nil, gs, "builtin", "")
+	m = NewAIMessageModel(ctx, nil, nil, gs, MessageConfig{
+		EditorMode:       "builtin",
+		SecurityKeywords: []string{"secret"},
+	}, "")
 	m3, _ := m.Update(commitSecurityWarningMsg{err: context.Canceled, diff: "diff", status: "status"})
 	m = *m3.(*AIMessageModel)
 	if m.state != StateSecurityWarning || !strings.Contains(m.View(), "potential sensitive data") {
@@ -217,7 +232,10 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 	}
 
 	// 4. Deny Security Warning (No)
-	m = NewAIMessageModel(ctx, nil, nil, gs, "builtin", "")
+	m = NewAIMessageModel(ctx, nil, nil, gs, MessageConfig{
+		EditorMode:       "builtin",
+		SecurityKeywords: []string{"secret"},
+	}, "")
 	m.state = StateSecurityWarning
 	m5, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m = *m5.(*AIMessageModel)
@@ -227,8 +245,12 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 }
 
 func TestAIMessageModel_Editing(t *testing.T) {
+	ctx := context.Background()
 	gs := &mockGitService{}
-	m := NewAIMessageModel(context.Background(), nil, nil, gs, "builtin", "")
+	m := NewAIMessageModel(ctx, nil, nil, gs, MessageConfig{
+		EditorMode:       "builtin",
+		SecurityKeywords: []string{"secret"},
+	}, "")
 	m.state = StateGenerated
 	m.commitMessage = "old"
 
@@ -251,7 +273,9 @@ func TestAIMessageModel_Editing(t *testing.T) {
 }
 
 func TestFlow_Options(t *testing.T) {
-	f := NewFlow(context.Background(), nil, nil, "builtin")
+	f := NewFlow(nil, nil, FlowConfig{
+		EditorMode: "builtin",
+	})
 	f.WithHint("myhint").WithSkipHint(true)
 	if f.hint != "myhint" || !f.skipHint {
 		t.Error("failed to set flow options")
@@ -259,38 +283,43 @@ func TestFlow_Options(t *testing.T) {
 }
 
 func TestFlow_PrintPullRequestInfo(t *testing.T) {
+	ctx := context.Background()
 	gs := &mockGitService{prURL: "https://github.com/pr/1"}
-	f := NewFlow(context.Background(), nil, gs, "builtin")
+	f := NewFlow(nil, gs, FlowConfig{
+		EditorMode: "builtin",
+	})
 
 	// Capturing stdout is complex, but we can at least call it to ensure no panics
-	f.printPullRequestInfo("remote: https://github.com/pr/2")
+	f.printPullRequestInfo(ctx, "remote: https://github.com/pr/2")
 
 	gs.prURL = ""
-	f.printPullRequestInfo("remote: https://github.com/pr/2")
+	f.printPullRequestInfo(ctx, "remote: https://github.com/pr/2")
 }
 
 func TestFilterCompatibleFiles(t *testing.T) {
+	ctx := context.Background()
 	gs := &mockGitService{
 		resolveResponse: []string{"a.go"},
 	}
-	f := NewFlow(context.Background(), nil, gs, "builtin")
+	f := NewFlow(nil, gs, FlowConfig{
+		EditorMode: "builtin",
+	})
 
 	available := []string{"a.go", "b.go"}
-
+	
 	// Exact match (tracked file)
-	res := f.FilterCompatibleFiles(available, []string{"a.go"})
+	res := f.FilterCompatibleFiles(ctx, available, []string{"a.go"})
 	if len(res) != 1 || res[0] != "a.go" {
 		t.Errorf("expected [a.go], got %v", res)
 	}
 
 	// Non-existent
 	gs.resolveResponse = nil
-	res = f.FilterCompatibleFiles(available, []string{"nonexistent.go"})
+	res = f.FilterCompatibleFiles(ctx, available, []string{"nonexistent.go"})
 	if len(res) != 0 {
 		t.Errorf("expected empty, got %v", res)
 	}
 }
-
 func TestUniqueStrings(t *testing.T) {
 	input := []string{"a", "b", "a", "c", "b"}
 	expected := []string{"a", "b", "c"}

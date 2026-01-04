@@ -59,13 +59,13 @@ const (
 )
 
 type GitDiffStatus interface {
-	GetChangesForFiles(files []string) (string, error)
-	GetStatusForFiles(files []string) (string, error)
+	GetChangesForFiles(ctx context.Context, files []string) (string, error)
+	GetStatusForFiles(ctx context.Context, files []string) (string, error)
 }
 
 type GitCommitter interface {
-	Commit(files []string, message string) error
-	Push(remoteName string) (string, error)
+	Commit(ctx context.Context, files []string, message string) error
+	Push(ctx context.Context, remoteName string) (string, error)
 }
 
 type messageGitService interface {
@@ -82,16 +82,21 @@ type AIMessageModel struct {
 	cancel        bool
 	generator     ai.CommitMessageGenerator
 	gitService    messageGitService
+	config        MessageConfig
 	savedDiff     string
 	savedStatus   string
 	ctx           context.Context
-	editorMode    string
 	textArea      textarea.Model
 	hint          string
 	pushOutput    string
 }
 
-func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, gs messageGitService, editorMode string, hint string) AIMessageModel {
+type MessageConfig struct {
+	EditorMode       string
+	SecurityKeywords []string
+}
+
+func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, gs messageGitService, cfg MessageConfig, hint string) AIMessageModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
@@ -112,30 +117,39 @@ func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitM
 		ctx:           ctx,
 		generator:     generator,
 		gitService:    gs,
-		editorMode:    editorMode,
+		config:        cfg,
 		textArea:      ta,
 		hint:          hint,
 	}
 }
 
-func runAIAsync(ctx context.Context, generator ai.CommitMessageGenerator, gs messageGitService, files []string, hint string) tea.Cmd {
+type runAIParams struct {
+	ctx              context.Context
+	generator        ai.CommitMessageGenerator
+	gitService       messageGitService
+	files            []string
+	securityKeywords []string
+	hint             string
+}
+
+func runAIAsync(p runAIParams) tea.Cmd {
 	return func() tea.Msg {
-		diff, err := gs.GetChangesForFiles(files)
+		diff, err := p.gitService.GetChangesForFiles(p.ctx, p.files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		status, err := gs.GetStatusForFiles(files)
+		status, err := p.gitService.GetStatusForFiles(p.ctx, p.files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		err = security.CheckDiffSafety(diff)
+		err = security.CheckDiffSafety(diff, p.securityKeywords)
 		if err != nil {
 			return commitSecurityWarningMsg{err: err, diff: diff, status: status}
 		}
 
-		commitMessage, err := generator.Generate(ctx, diff, status, hint)
+		commitMessage, err := p.generator.Generate(p.ctx, diff, status, p.hint)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -155,16 +169,16 @@ func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessag
 	}
 }
 
-func runCommitAsync(gs messageGitService, files []string, message string) tea.Cmd {
+func runCommitAsync(ctx context.Context, gs messageGitService, files []string, message string) tea.Cmd {
 	return func() tea.Msg {
-		err := gs.Commit(files, message)
+		err := gs.Commit(ctx, files, message)
 		return commitResultMsg{err: err}
 	}
 }
 
-func runPushAsync(gs messageGitService, remote string) tea.Cmd {
+func runPushAsync(ctx context.Context, gs messageGitService, remote string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := gs.Push(remote)
+		out, err := gs.Push(ctx, remote)
 		return pushResultMsg{err: err, output: out}
 	}
 }
@@ -210,7 +224,14 @@ func openEditor(content string, editorCmd string) tea.Cmd {
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		runAIAsync(m.ctx, m.generator, m.gitService, m.files, m.hint),
+		runAIAsync(runAIParams{
+			ctx:              m.ctx,
+			generator:        m.generator,
+			gitService:       m.gitService,
+			files:            m.files,
+			securityKeywords: m.config.SecurityKeywords,
+			hint:             m.hint,
+		}),
 	)
 }
 
@@ -259,31 +280,38 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StateCommitting
 				m.errMsg = ""
 
-				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.gitService, m.files, m.commitMessage))
+				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.ctx, m.gitService, m.files, m.commitMessage))
 			}
 		case "p":
 			// allow pushing only when we've committed
 			if m.state == StateCommitted {
 				m.state = StatePushing
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runPushAsync(m.gitService, "origin"))
+				return m, tea.Batch(m.spinner.Tick, runPushAsync(m.ctx, m.gitService, "origin"))
 			}
 		case "e":
 			if m.state == StateGenerated {
-				if m.editorMode == "builtin" {
+				if m.config.EditorMode == "builtin" {
 					m.state = StateEditing
 					m.textArea.SetValue(m.commitMessage)
 					m.textArea.Focus()
 					return m, textarea.Blink
 				} else {
-					return m, openEditor(m.commitMessage, m.editorMode)
+					return m, openEditor(m.commitMessage, m.config.EditorMode)
 				}
 			}
 		case "r":
 			if m.state == StateGenerated {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, m.generator, m.gitService, m.files, m.hint))
+				return m, tea.Batch(m.spinner.Tick, runAIAsync(runAIParams{
+					ctx:              m.ctx,
+					generator:        m.generator,
+					gitService:       m.gitService,
+					files:            m.files,
+					securityKeywords: m.config.SecurityKeywords,
+					hint:             m.hint,
+				}))
 			}
 		}
 	case spinner.TickMsg:

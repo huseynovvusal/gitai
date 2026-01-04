@@ -31,7 +31,7 @@ func TestService_Generate_PropagatesError(t *testing.T) {
 		},
 	}
 
-	service := NewService(mockProvider)
+	service := NewService(mockProvider, "-")
 
 	_, err := service.Generate(context.Background(), "diff", "status", "")
 	if err == nil {

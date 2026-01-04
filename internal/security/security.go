@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/sourcegraph/go-diff/diff"
-	"github.com/spf13/viper"
 )
 
 type Finding struct {
@@ -17,35 +16,7 @@ type Finding struct {
 	Text string
 }
 
-func GetSensitiveKeywords() []string {
-	sl := viper.GetStringSlice("security.keywords")
-	if len(sl) == 0 {
-		return []string{}
-	}
-
-	// If it's a single string with commas, split it (env var case)
-	if len(sl) == 1 && strings.Contains(sl[0], ",") {
-		return parseKeywordsCSV(sl[0])
-	}
-
-	return sl
-}
-
-func parseKeywordsCSV(csv string) []string {
-	parts := strings.Split(csv, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.ToLower(strings.TrimSpace(p))
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func CheckDiffSafety(diffText string) error {
-	keywords := GetSensitiveKeywords()
-
+func CheckDiffSafety(diffText string, keywords []string) error {
 	fileDiffs, err := diff.ParseMultiFileDiff([]byte(diffText))
 	if err != nil {
 		return err
