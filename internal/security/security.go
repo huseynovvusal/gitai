@@ -18,21 +18,18 @@ type Finding struct {
 }
 
 func GetSensitiveKeywords() []string {
-	// 1. Try getting as a slice (yaml list, or default value)
 	sl := viper.GetStringSlice("security.keywords")
-	if len(sl) > 0 {
-		return sl
+	if len(sl) == 0 {
+		return []string{}
 	}
 
-	// 2. Try getting as a string (env var CSV) if slice conversion failed
-	s := viper.GetString("security.keywords")
-	if s != "" {
-		return parseKeywordsCSV(s)
+	// If it's a single string with commas, split it (env var case)
+	if len(sl) == 1 && strings.Contains(sl[0], ",") {
+		return parseKeywordsCSV(sl[0])
 	}
 
-	return []string{}
+	return sl
 }
-
 
 func parseKeywordsCSV(csv string) []string {
 	parts := strings.Split(csv, ",")
@@ -70,9 +67,6 @@ func CheckDiffSafety(diffText string) error {
 
 				switch ln[0] {
 				case '+':
-					if strings.HasPrefix(ln, "+++") {
-						continue
-					}
 					text := strings.TrimPrefix(ln, "+")
 					if containsKeyword(text, keywords) {
 						findings = append(findings, Finding{File: filename, Line: newLine, Text: strings.TrimSpace(text)})
@@ -101,7 +95,7 @@ func CheckDiffSafety(diffText string) error {
 		if !filepath.IsAbs(abs) {
 			abs = filepath.Join(cwd, abs)
 		}
-		// create file:// URI with encoded path so terminals like VS Code treat it as a clickable link
+		// create file:// URI with an encoded path so terminals like VS Code treat it as a clickable link
 		u := url.URL{Scheme: "file", Path: abs}
 		fileURI := u.String()
 		b.WriteString(fmt.Sprintf("- %s:%d:1: %s\n", fileURI, f.Line, f.Text))
