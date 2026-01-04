@@ -3,6 +3,8 @@ package git
 import (
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/ssh/agent"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -341,44 +343,89 @@ func GetCurrentBranch() (string, error) {
 
 // --- Utilities ---
 
-// resolveAuth intelligently finds the best authentication method.
+// resolveAuth intelligently finds the best authentication method by scanning ALL keys.
 func resolveAuth(url string) (transport.AuthMethod, error) {
-	// 1. If HTTP/S, no auth needed (managed by credential helpers usually)
 	if strings.HasPrefix(url, "http") {
 		return nil, nil
 	}
 
-	// 2. Identify the SSH user (Default to "git" if not specified)
 	user := "git"
 	if parts := strings.Split(url, "@"); len(parts) > 1 {
-		user = parts[0]
-		if strings.Contains(user, "://") {
-			user = strings.Split(user, "://")[1]
-		}
+		// Handle git@github.com -> user: git
+		user = strings.Split(parts[0], "://")[len(strings.Split(parts[0], "://"))-1]
 	}
 
-	// 3. Try SSH Agent (Preferred)
-	if auth, err := gitssh.NewSSHAgentAuth(user); err == nil {
-		auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
-		return auth, nil
-	}
+	// Define the logic to find keys
+	callback := func() ([]ssh.Signer, error) {
+		var signers []ssh.Signer
+		seenKeys := make(map[string]bool)
 
-	// 4. Try Common Key Files
-	home, _ := os.UserHomeDir()
-	keyFiles := []string{"id_ed25519", "id_rsa", "id_ecdsa"}
-
-	for _, key := range keyFiles {
-		path := filepath.Join(home, ".ssh", key)
-		if _, err := os.Stat(path); err == nil {
-			// Try to load public keys
-			if auth, err := gitssh.NewPublicKeysFromFile(user, path, ""); err == nil {
-				auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
-				return auth, nil
+		// 1. Try System SSH Agent (Priority #1)
+		if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+			if conn, err := net.Dial("unix", sock); err == nil {
+				ag := agent.NewClient(conn)
+				if agentSigners, err := ag.Signers(); err == nil {
+					for _, s := range agentSigners {
+						signers = append(signers, s)
+						seenKeys[ssh.FingerprintSHA256(s.PublicKey())] = true
+					}
+				}
 			}
 		}
+
+		// 2. Scan ~/.ssh for ALL private keys (Priority #2)
+		home, _ := os.UserHomeDir()
+		sshDir := filepath.Join(home, ".ssh")
+		files, _ := os.ReadDir(sshDir)
+
+		for _, f := range files {
+			// Skip public keys, directories, and known_hosts
+			if f.IsDir() || strings.HasSuffix(f.Name(), ".pub") ||
+				strings.HasPrefix(f.Name(), "known_hosts") ||
+				strings.HasPrefix(f.Name(), "config") ||
+				strings.HasPrefix(f.Name(), "authorized_keys") {
+				continue
+			}
+
+			// Try to read file
+			path := filepath.Join(sshDir, f.Name())
+			keyData, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+
+			// Check if it's a valid private key
+			signer, err := ssh.ParsePrivateKey(keyData)
+			if err != nil {
+				continue
+			}
+
+			// Deduplicate
+			fp := ssh.FingerprintSHA256(signer.PublicKey())
+			if !seenKeys[fp] {
+				signers = append(signers, signer)
+				seenKeys[fp] = true
+			}
+		}
+
+		if len(signers) == 0 {
+			return nil, errors.New("no valid ssh keys (agent or disk) found")
+		}
+
+		return signers, nil
 	}
 
-	return nil, fmt.Errorf("no valid ssh agent or key found for user %s", user)
+	// Construct the AuthMethod
+	auth := &gitssh.PublicKeysCallback{
+		User:     user,
+		Callback: callback,
+	}
+
+	// FIX: Assign this field separately to avoid "not a member" compilation errors
+	// due to how Go handles embedded struct literals.
+	auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+
+	return auth, nil
 }
 
 func normalizeGitURL(url string) string {
