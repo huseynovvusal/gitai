@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -265,6 +266,77 @@ func (s *Service) ResolvePath(path string) ([]string, error) {
 
 	sort.Strings(results)
 	return results, nil
+}
+
+// ExtractVersionFromDiff scans a unified diff for lines that look like version updates.
+// It returns a string representing the change, e.g., "0.4.0 -> 0.5.0".
+func ExtractVersionFromDiff(diffText string) string {
+	lines := strings.Split(diffText, "\n")
+
+	// Improved regex: look for something that starts with a digit,
+	// contains at least one dot, and then more digits/dots/alphanumerics.
+	// We avoid matching the leading +/- prefix.
+	versionRegex := regexp.MustCompile(`([0-9]+\.[0-9][0-9a-z.-]*)`)
+
+	var oldVersion, newVersion string
+	var currentFile string
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "diff --git") {
+			parts := strings.Fields(line)
+			if len(parts) >= 4 {
+				currentFile = filepath.Base(parts[3])
+			}
+			continue
+		}
+
+		// Only look for versions in specific files likely to contain project versioning
+		// and EXCLUDE test files explicitly.
+		isPotentialVersionFile := (strings.EqualFold(currentFile, "VERSION") ||
+			strings.EqualFold(currentFile, "package.json") ||
+			strings.EqualFold(currentFile, "go.mod") ||
+			strings.EqualFold(currentFile, "Cargo.toml") ||
+			strings.EqualFold(currentFile, "pyproject.toml") ||
+			strings.EqualFold(currentFile, "composer.json") ||
+			strings.EqualFold(currentFile, "Gemfile") ||
+			strings.EqualFold(currentFile, "mix.exs") ||
+			strings.EqualFold(currentFile, "version.rb") ||
+			strings.EqualFold(currentFile, "version.py") ||
+			strings.EqualFold(currentFile, "setup.py") ||
+			strings.EqualFold(currentFile, "CMakeLists.txt")) &&
+			!strings.Contains(strings.ToLower(currentFile), "test") &&
+			!strings.Contains(strings.ToLower(currentFile), "_spec")
+
+		lowerLine := strings.ToLower(line)
+		containsVersionKeyword := strings.Contains(lowerLine, "version") &&
+			!strings.Contains(lowerLine, "versioning") &&
+			!strings.Contains(strings.ToLower(currentFile), "test") // Double check for safety
+
+		if isPotentialVersionFile || containsVersionKeyword {
+			// Extract from removed line
+			if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+				content := line[1:] // strip '-'
+				if matches := versionRegex.FindStringSubmatch(content); len(matches) > 1 {
+					oldVersion = matches[1]
+				}
+			}
+			// Extract from added line
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				content := line[1:] // strip '+'
+				if matches := versionRegex.FindStringSubmatch(content); len(matches) > 1 {
+					newVersion = matches[1]
+				}
+			}
+		}
+
+		// If we found both in the same file hunk, and they are different, we're likely done
+		if oldVersion != "" && newVersion != "" && oldVersion != newVersion {
+			return fmt.Sprintf("%s -> %s", oldVersion, newVersion)
+		}
+	}
+
+	// Fallback to just newVersion if we couldn't find an old one (e.g. initial version)
+	return newVersion
 }
 
 // GetPullRequestURL generates a web URL to create a new pull request for the current branch.

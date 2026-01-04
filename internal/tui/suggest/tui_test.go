@@ -15,7 +15,7 @@ type mockGenerator struct {
 	err      error
 }
 
-func (m *mockGenerator) Generate(ctx context.Context, _, _, _ string) (string, error) {
+func (m *mockGenerator) Generate(ctx context.Context, _, _, _, _ string) (string, error) {
 	return m.response, m.err
 }
 
@@ -29,6 +29,10 @@ type mockGitService struct {
 	commitErr       error
 	pushResponse    string
 	prURL           string
+}
+
+func (m *mockGitService) GetVersion() (string, error) {
+	return "", nil
 }
 
 func (m *mockGitService) GetStatusForFiles(_ []string) (string, error) {

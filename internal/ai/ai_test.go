@@ -33,7 +33,7 @@ func TestService_Generate_PropagatesError(t *testing.T) {
 
 	service := NewService(mockProvider, "-")
 
-	_, err := service.Generate(context.Background(), "diff", "status", "")
+	_, err := service.Generate(context.Background(), "diff", "status", "", "1.0.0")
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}

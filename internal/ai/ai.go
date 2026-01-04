@@ -8,7 +8,7 @@ import (
 
 // CommitMessageGenerator defines the interface for generating commit messages.
 type CommitMessageGenerator interface {
-	Generate(ctx context.Context, diff string, status string, hint string) (string, error)
+	Generate(ctx context.Context, diff string, status string, hint string, version string) (string, error)
 }
 
 // Service implements CommitMessageGenerator using an AIProvider.
@@ -26,8 +26,11 @@ func NewService(provider provider.AIProvider, bulletPoint string) *Service {
 }
 
 // Generate generates a commit message.
-func (s *Service) Generate(ctx context.Context, diff string, status string, hint string) (string, error) {
+func (s *Service) Generate(ctx context.Context, diff string, status string, hint string, version string) (string, error) {
 	userMessage := "diff: " + diff + "\n\nstatus: " + status
+	if version != "" {
+		userMessage += "\n\nVersion update detected: " + version + "\nInstruction: Follow the 'chore(release)' format mentioned in the system prompt."
+	}
 	if hint != "" {
 		userMessage += "\n\nUser context/instruction: " + hint
 	}

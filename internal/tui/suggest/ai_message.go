@@ -12,12 +12,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/security"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
 
 type aiDoneMsg struct {
 	message string
+	version string
 }
 
 type aiErrorMsg struct {
@@ -34,9 +36,10 @@ type pushResultMsg struct {
 }
 
 type commitSecurityWarningMsg struct {
-	err    error
-	diff   string
-	status string
+	err     error
+	diff    string
+	status  string
+	version string
 }
 
 type editorFinishedMsg struct {
@@ -75,6 +78,7 @@ type AIMessageModel struct {
 	config        MessageConfig
 	savedDiff     string
 	savedStatus   string
+	savedVersion  string
 	ctx           context.Context
 	textArea      textarea.Model
 	hint          string
@@ -122,7 +126,7 @@ type runAIParams struct {
 	hint             string
 }
 
-func runAIAsync(ctx context.Context, p runAIParams) tea.Cmd {
+func runAIAsync(p runAIParams) tea.Cmd {
 	return func() tea.Msg {
 		diff, err := p.gitService.GetChangesForFiles(p.files)
 		if err != nil {
@@ -134,28 +138,30 @@ func runAIAsync(ctx context.Context, p runAIParams) tea.Cmd {
 			return aiErrorMsg{err: err}
 		}
 
+		version := git.ExtractVersionFromDiff(diff)
+
 		err = security.CheckDiffSafety(diff, p.securityKeywords)
 		if err != nil {
-			return commitSecurityWarningMsg{err: err, diff: diff, status: status}
+			return commitSecurityWarningMsg{err: err, diff: diff, status: status, version: version}
 		}
 
-		commitMessage, err := p.generator.Generate(ctx, diff, status, p.hint)
+		commitMessage, err := p.generator.Generate(p.ctx, diff, status, p.hint, version)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
-		return aiDoneMsg{message: commitMessage}
+		return aiDoneMsg{message: commitMessage, version: version}
 	}
 }
 
 // runGenerateAfterWarningAsync resumes commit message generation using the
 // previously saved diff/status after the user confirmed the warning.
-func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessageGenerator, diff, status, hint string) tea.Cmd {
+func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessageGenerator, diff, status, hint, version string) tea.Cmd {
 	return func() tea.Msg {
-		commitMessage, err := generator.Generate(ctx, diff, status, hint)
+		commitMessage, err := generator.Generate(ctx, diff, status, hint, version)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
-		return aiDoneMsg{message: commitMessage}
+		return aiDoneMsg{message: commitMessage, version: version}
 	}
 }
 
@@ -214,7 +220,8 @@ func openEditor(content string, editorCmd string) tea.Cmd {
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		runAIAsync(m.ctx, runAIParams{
+		runAIAsync(runAIParams{
+			ctx:              m.ctx,
 			generator:        m.generator,
 			gitService:       m.gitService,
 			files:            m.files,
@@ -256,7 +263,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateSecurityWarning {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, runGenerateAfterWarningAsync(m.ctx, m.generator, m.savedDiff, m.savedStatus, m.hint)
+				return m, runGenerateAfterWarningAsync(m.ctx, m.generator, m.savedDiff, m.savedStatus, m.hint, m.savedVersion)
 			}
 		case "n":
 			if m.state == StateSecurityWarning {
@@ -293,7 +300,8 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateGenerated {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, runAIParams{
+				return m, tea.Batch(m.spinner.Tick, runAIAsync(runAIParams{
+					ctx:              m.ctx,
 					generator:        m.generator,
 					gitService:       m.gitService,
 					files:            m.files,
@@ -309,6 +317,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case aiDoneMsg:
 		m.commitMessage = msg.message
+		m.savedVersion = msg.version
 		m.state = StateGenerated
 		return m, nil
 
@@ -342,6 +351,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// save context so we can resume generation if the user confirms
 			m.savedDiff = msg.diff
 			m.savedStatus = msg.status
+			m.savedVersion = msg.version
 			m.state = StateSecurityWarning
 			m.errMsg = msg.err.Error()
 			return m, nil

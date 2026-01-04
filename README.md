@@ -21,6 +21,7 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 - **Edit & Regenerate**: Tweak suggestions in-place or regenerate them with a keystroke 🔄
 - **Security scanning**: Automatically detects sensitive data (keys, passwords) in diffs before sending to AI 🔒
 - **Smart ticket extraction**: Automatically parses Jira and GitHub issue URLs from hints to format commit headers 🎫
+- **Smart release detection**: Automatically identifies version bumps in files like `VERSION`, `package.json`, `go.mod`, `Cargo.toml`, etc., and formats them as `chore(release)` commits 🚀
 - Conventional Commits: Generates messages following the Conventional Commits specification by default 📝
 - Pluggable AI backends: OpenAI, Google GenAI, Ollama (local)
 - **Zero external dependencies**: Built in pure Go (no `git` binary required) ⚙️
@@ -52,7 +53,7 @@ brew install gitai
 1. Clone the repository and build:
 
 ```sh
-git clone https://github.com/yourusername/gitai.git
+git clone https://github.com/artback/gitai.git
 cd gitai
 make build
 ```
