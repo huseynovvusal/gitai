@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
+	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -25,16 +25,16 @@ import (
 // ErrOutsideRepo is returned when a provided path is not within the git repository.
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
-// GitService provides methods for interacting with a Git repository.
-type GitService struct{}
+// Service provides methods for interacting with a Git repository.
+type Service struct{}
 
-// NewGitService creates a new GitService instance.
-func NewGitService() *GitService {
-	return &GitService{}
+// NewService creates a new Service instance.
+func NewService() *Service {
+	return &Service{}
 }
 
 // GetStatusForFiles returns the porcelain status of the specified files.
-func (s *GitService) GetStatusForFiles(ctx context.Context, files []string) (string, error) {
+func (s *Service) GetStatusForFiles(files []string) (string, error) {
 	_, w, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -57,7 +57,7 @@ func (s *GitService) GetStatusForFiles(ctx context.Context, files []string) (str
 }
 
 // GetChangedFiles returns a sorted list of all modified, added, or deleted files in the repository.
-func (s *GitService) GetChangedFiles(ctx context.Context) ([]string, error) {
+func (s *Service) GetChangedFiles() ([]string, error) {
 	_, w, _, err := getRepo()
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (s *GitService) GetChangedFiles(ctx context.Context) ([]string, error) {
 }
 
 // GetChangesForFiles generates a unified diff for the specified files against the HEAD commit.
-func (s *GitService) GetChangesForFiles(ctx context.Context, files []string) (string, error) {
+func (s *Service) GetChangesForFiles(files []string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -116,7 +116,7 @@ func (s *GitService) GetChangesForFiles(ctx context.Context, files []string) (st
 }
 
 // Commit stages the specified files and creates a new commit with the given message.
-func (s *GitService) Commit(ctx context.Context, files []string, message string) error {
+func (s *Service) Commit(files []string, message string) error {
 	r, w, _, err := getRepo()
 	if err != nil {
 		return err
@@ -132,36 +132,54 @@ func (s *GitService) Commit(ctx context.Context, files []string, message string)
 		}
 	}
 
-	user, email := "Gitai User", "gitai@example.com"
-	if cfg, err := r.Config(); err == nil {
-		if cfg.User.Name != "" {
-			user = cfg.User.Name
-		}
-		if cfg.User.Email != "" {
-			email = cfg.User.Email
-		}
-	}
-
-	// Fallback to global config if local is empty
-	if user == "Gitai User" || email == "gitai@example.com" {
-		if global, err := config.LoadConfig(config.GlobalScope); err == nil {
-			if user == "Gitai User" && global.User.Name != "" {
-				user = global.User.Name
-			}
-			if email == "gitai@example.com" && global.User.Email != "" {
-				email = global.User.Email
-			}
-		}
+	sig, err := getAuthorSignature(r)
+	if err != nil {
+		return err
 	}
 
 	_, err = w.Commit(message, &git.CommitOptions{
-		Author: &object.Signature{Name: user, Email: email, When: time.Now()},
+		Author: sig,
 	})
 	return err
 }
 
+func getAuthorSignature(r *git.Repository) (*object.Signature, error) {
+	// 1. Try Local Config first
+	cfg, _ := r.Config()
+	name, email := getNameEmail(cfg)
+
+	// 2. Fallback to Global Config (only if necessary)
+	if name == "" || email == "" {
+		global, _ := gitconfig.LoadConfig(gitconfig.GlobalScope)
+		gName, gEmail := getNameEmail(global)
+		if name == "" {
+			name = gName
+		}
+		if email == "" {
+			email = gEmail
+		}
+	}
+
+	if name == "" || email == "" {
+		return nil, errors.New("git user name or email not found in local or global config")
+	}
+
+	return &object.Signature{
+		Name:  name,
+		Email: email,
+		When:  time.Now(),
+	}, nil
+}
+
+func getNameEmail(c *gitconfig.Config) (string, string) {
+	if c == nil {
+		return "", ""
+	}
+	return c.User.Name, c.User.Email
+}
+
 // Push pushes the current branch to the specified remote.
-func (s *GitService) Push(ctx context.Context, remoteName string) (string, error) {
+func (s *Service) Push(ctx context.Context, remoteName string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -193,7 +211,7 @@ func (s *GitService) Push(ctx context.Context, remoteName string) (string, error
 }
 
 // ResolvePath returns a list of all repository files within the given path.
-func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, error) {
+func (s *Service) ResolvePath(path string) ([]string, error) {
 	r, w, root, err := getRepo()
 	if err != nil {
 		return nil, err
@@ -250,7 +268,7 @@ func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, er
 }
 
 // GetPullRequestURL generates a web URL to create a new pull request for the current branch.
-func (s *GitService) GetPullRequestURL(ctx context.Context, remoteName string) (string, error) {
+func (s *Service) GetPullRequestURL(remoteName string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -270,18 +288,18 @@ func (s *GitService) GetPullRequestURL(ctx context.Context, remoteName string) (
 		return "", fmt.Errorf("no remote %s", remoteName)
 	}
 
-	url := rem.Config().URLs[0]
-	url = normalizeGitURL(url)
+	remoteUrl := rem.Config().URLs[0]
+	remoteUrl = normalizeGitURL(remoteUrl)
 
 	switch {
-	case strings.Contains(url, "github.com"):
-		return fmt.Sprintf("%s/pull/new/%s", url, branch), nil
-	case strings.Contains(url, "gitlab.com"):
-		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", url, branch), nil
-	case strings.Contains(url, "bitbucket.org"):
-		return fmt.Sprintf("%s/pull-requests/new?source=%s", url, branch), nil
+	case strings.Contains(remoteUrl, "github.com"):
+		return fmt.Sprintf("%s/pull/new/%s", remoteUrl, branch), nil
+	case strings.Contains(remoteUrl, "gitlab.com"):
+		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", remoteUrl, branch), nil
+	case strings.Contains(remoteUrl, "bitbucket.org"):
+		return fmt.Sprintf("%s/pull-requests/new?source=%s", remoteUrl, branch), nil
 	default:
-		return "", fmt.Errorf("unknown host: %s", url)
+		return "", fmt.Errorf("unknown host: %s", remoteUrl)
 	}
 }
 
