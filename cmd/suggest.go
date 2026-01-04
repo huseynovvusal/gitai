@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,12 @@ func NewSuggestCmd() *cobra.Command {
 
 			providerEnum, err := provider.ParseProvider(cfg.AI.Provider)
 			if err != nil {
-				cmd.PrintErrln("Invalid provider:", err)
+				var invalidError *provider.InvalidProviderError
+				if errors.As(err, &invalidError) {
+					cmd.PrintErrln(err)
+				} else {
+					cmd.PrintErrln("Invalid provider:", err)
+				}
 
 				return
 			}

@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"fmt"
 )
 
 // AIProvider defines the interface for underlying AI services.
@@ -22,6 +21,6 @@ func NewAIProvider(p Provider, cfg Config) (AIProvider, error) {
 	case ProvideGeminiCLI:
 		return NewGeminiCLIProvider(), nil
 	default:
-		return nil, fmt.Errorf("invalid AI provider: %s", p)
+		return nil, &InvalidProviderError{Provider: string(p)}
 	}
 }

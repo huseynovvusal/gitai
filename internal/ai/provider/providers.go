@@ -26,10 +26,8 @@ func ParseProvider(str string) (Provider, error) {
 		return ProvideGeminiCLI, nil
 	case "ollama", "local":
 		return ProviderOllama, nil
-	case "", "none":
-		return ProviderNone, nil
 	default:
-		return ProviderNone, fmt.Errorf("unknown provider: %s", str)
+		return ProviderNone, &InvalidProviderError{Provider: str}
 	}
 }
 
