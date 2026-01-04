@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-jetbrains-mono
+          sudo apt-get install -y ffmpeg fonts-ibm-plex
           # ttyd is often not in standard repos or is old, downloading binary is safer
           wget -q -O ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.3/ttyd.x86_64
           sudo mv ttyd /usr/local/bin/ttyd

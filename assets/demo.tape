@@ -6,7 +6,7 @@ Set FontSize 24
 Set Width 1600
 Set Height 900
 Set Padding 40
-Set FontFamily "JetBrains Mono"
+Set FontFamily "IBM Plex Mono"
 Set LineHeight 1.2
 Set WindowBar Colorful
 
