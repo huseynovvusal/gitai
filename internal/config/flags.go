@@ -2,7 +2,6 @@ package config
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -27,13 +26,4 @@ func RegisterSuggestFlags(cmd *cobra.Command) {
 	_ = viper.BindPFlag("suggest.no-hint", cmd.Flags().Lookup("no-hint"))
 	_ = viper.BindPFlag("suggest.amend", cmd.Flags().Lookup("amend"))
 	_ = viper.BindPFlag("suggest.force_push", cmd.Flags().Lookup("force"))
-}
-
-// MustGetBool is a helper to get a boolean flag value or panic on error.
-func MustGetBool(flags *pflag.FlagSet, name string) bool {
-	val, err := flags.GetBool(name)
-	if err != nil {
-		panic(err)
-	}
-	return val
 }
