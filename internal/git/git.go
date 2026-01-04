@@ -21,21 +21,17 @@ import (
 
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
-// resolveAuth automatically finds keys from the Agent OR any private key file in ~/.ssh
 func resolveAuth(url string) (transport.AuthMethod, error) {
 	if strings.HasPrefix(url, "http") {
 		return nil, nil
 	}
 
-	// Extract user (default "git")
 	user := "git"
 	if parts := strings.Split(url, "@"); len(parts) > 1 {
 		user = strings.Split(parts[0], "://")[0]
 	}
 
-	// Define the callback logic separately
 	keyCallback := func() (signers []ssh.Signer, err error) {
-		// A. Try SSH Agent
 		if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 			if conn, err := net.Dial("unix", sock); err == nil {
 				if s, err := agent.NewClient(conn).Signers(); err == nil {
@@ -44,17 +40,14 @@ func resolveAuth(url string) (transport.AuthMethod, error) {
 			}
 		}
 
-		// B. Try all files in ~/.ssh (Simpler than guessing names)
 		home, _ := os.UserHomeDir()
 		files, _ := os.ReadDir(filepath.Join(home, ".ssh"))
 		for _, f := range files {
-			// Skip public keys and known config files
 			if f.IsDir() || strings.HasSuffix(f.Name(), ".pub") ||
 				strings.HasPrefix(f.Name(), "known_") || strings.HasPrefix(f.Name(), "config") {
 				continue
 			}
 
-			// Try to parse as private key (ignores non-keys automatically)
 			if key, err := os.ReadFile(filepath.Join(home, ".ssh", f.Name())); err == nil {
 				if signer, err := ssh.ParsePrivateKey(key); err == nil {
 					signers = append(signers, signer)
@@ -78,10 +71,8 @@ func resolveAuth(url string) (transport.AuthMethod, error) {
 	return auth, nil
 }
 
-// --- 2. Core Logic ---
-
 func getRepo() (*git.Repository, *git.Worktree, string, error) {
-	root, err := GetGitRoot() // Assumes external existence
+	root, err := GetGitRoot()
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -115,7 +106,6 @@ func toRel(path string) (string, error) {
 	return rel, nil
 }
 
-// Push pushes the current branch to origin using the smart auth.
 func Push() (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
@@ -181,8 +171,6 @@ func Commit(files []string, message string) error {
 	return err
 }
 
-// --- 3. Status & Diffing ---
-
 func GetStatusForFiles(files []string) (string, error) {
 	_, w, _, err := getRepo()
 	if err != nil {
@@ -198,7 +186,7 @@ func GetStatusForFiles(files []string) (string, error) {
 	for _, f := range files {
 		if rel, err := toRel(f); err == nil {
 			if s, ok := status[rel]; ok {
-				sb.WriteString(fmt.Sprintf("%c%c %s\n", statusCode(s.Staging), statusCode(s.Worktree), rel))
+				sb.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(s.Staging), formatStatusCode(s.Worktree), rel))
 			}
 		}
 	}
@@ -257,7 +245,7 @@ func GetChangesForFiles(files []string) (string, error) {
 		if isNew && isDeleted {
 			continue
 		}
-		sb.WriteString(diffString(rel, oldText, newText, isNew, isDeleted))
+		sb.WriteString(generateDiffString(rel, oldText, newText, isNew, isDeleted))
 	}
 	return sb.String(), nil
 }
@@ -276,18 +264,15 @@ func ResolvePath(path string) ([]string, error) {
 
 	info, err := os.Stat(abs)
 	if err != nil || !info.IsDir() {
-		// Return single file (even if deleted/missing)
 		if strings.HasPrefix(rel, "..") {
 			return nil, ErrOutsideRepo
 		}
 		return []string{rel}, nil
 	}
 
-	// It's a directory: find all tracked files inside
 	status, _ := w.Status()
 	headTree, _ := getHeadTree(r)
 
-	// Normalize path prefix
 	prefix := rel
 	if prefix == "." {
 		prefix = ""
@@ -299,7 +284,6 @@ func ResolvePath(path string) ([]string, error) {
 	seen := make(map[string]bool)
 	var results []string
 
-	// Helper to add if matches prefix
 	add := func(p string) {
 		if (prefix == "" || strings.HasPrefix(p, prefix)) && !seen[p] {
 			results = append(results, p)
@@ -322,8 +306,6 @@ func ResolvePath(path string) ([]string, error) {
 	return results, nil
 }
 
-// --- 4. Utilities ---
-
 func getHeadTree(r *git.Repository) (*object.Tree, error) {
 	head, err := r.Head()
 	if err != nil {
@@ -336,7 +318,7 @@ func getHeadTree(r *git.Repository) (*object.Tree, error) {
 	return c.Tree()
 }
 
-func statusCode(c git.StatusCode) rune {
+func formatStatusCode(c git.StatusCode) rune {
 	switch c {
 	case git.Unmodified:
 		return ' '
@@ -348,6 +330,8 @@ func statusCode(c git.StatusCode) rune {
 		return 'D'
 	case git.Renamed:
 		return 'R'
+	case git.Copied:
+		return 'C'
 	case git.Untracked:
 		return '?'
 	default:
@@ -355,13 +339,20 @@ func statusCode(c git.StatusCode) rune {
 	}
 }
 
-func diffString(path, old, new string, isNew, isDel bool) string {
+// generateDiffString creates a unified diff compatible with standard git output.
+//
+// NOTE: We intentionally use the verbose "diff --git" header format (instead of
+// simpler custom formats like "M file.go") because LLMs perform significantly
+// better with it. The standard git headers act as strong "mental anchors" that
+// prevent context bleeding between files and align with the model's training data.
+func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
-	diffs := dmp.DiffMain(old, new, false)
-	patches := dmp.PatchMake(old, diffs)
+	patches := dmp.PatchMake(old, new)
 
 	var sb strings.Builder
+
 	sb.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
+
 	if isNew {
 		sb.WriteString(fmt.Sprintf("new file mode 100644\n--- /dev/null\n+++ b/%s\n", path))
 	} else if isDel {
@@ -369,8 +360,24 @@ func diffString(path, old, new string, isNew, isDel bool) string {
 	} else {
 		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
+
 	sb.WriteString(dmp.PatchToText(patches))
 	return sb.String()
+}
+
+func normalizeGitURL(url string) string {
+	url = strings.TrimSpace(url)
+	url = strings.TrimSuffix(url, ".git")
+	if strings.HasPrefix(url, "git@") {
+		url = "https://" + strings.Replace(strings.TrimPrefix(url, "git@"), ":", "/", 1)
+	} else if strings.HasPrefix(url, "ssh://") {
+		url = "https://" + strings.TrimPrefix(strings.Split(url, "@")[1], ":")
+	}
+
+	if !strings.HasPrefix(url, "http") {
+		url = "https://" + url
+	}
+	return url
 }
 
 func GetPullRequestURL() (string, error) {
@@ -394,7 +401,6 @@ func GetPullRequestURL() (string, error) {
 	}
 
 	url := rem.Config().URLs[0]
-	// Normalize URL
 	url = strings.TrimSuffix(strings.TrimSpace(url), ".git")
 	if strings.HasPrefix(url, "git@") {
 		url = "https://" + strings.Replace(strings.TrimPrefix(url, "git@"), ":", "/", 1)
