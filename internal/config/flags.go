@@ -1,0 +1,39 @@
+package config
+
+import (
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
+)
+
+// RegisterSuggestFlags registers the flags for the suggest command and binds them to viper.
+func RegisterSuggestFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("provider", "p", "", "AI provider to use (gpt|gemini|ollama|geminicli). If empty, uses env or config or default")
+	cmd.Flags().StringP("api_key", "k", "", "Optional API key to provide to AI provider")
+	cmd.Flags().StringP("editor", "e", "system", "Editor to use for commit messages (builtin, system, or command)")
+	cmd.Flags().Float64P("temperature", "t", 0.7, "Temperature for AI generation")
+	cmd.Flags().Int64("max_tokens", 256, "Maximum tokens for AI generation")
+	cmd.Flags().StringP("hint", "H", "", "Provide a hint for the commit message directly")
+	cmd.Flags().Bool("no-hint", false, "Skip the hint input prompt")
+	cmd.Flags().BoolP("amend", "a", false, "Amend the previous commit with the selected files and regenerated message")
+	cmd.Flags().BoolP("force", "f", false, "Force push changes (only valid with --amend)")
+
+	_ = viper.BindPFlag("ai.provider", cmd.Flags().Lookup("provider"))
+	_ = viper.BindPFlag("ai.api_key", cmd.Flags().Lookup("api_key"))
+	_ = viper.BindPFlag("suggest.editor", cmd.Flags().Lookup("editor"))
+	_ = viper.BindPFlag("ai.temperature", cmd.Flags().Lookup("temperature"))
+	_ = viper.BindPFlag("ai.max_tokens", cmd.Flags().Lookup("max_tokens"))
+	_ = viper.BindPFlag("suggest.hint", cmd.Flags().Lookup("hint"))
+	_ = viper.BindPFlag("suggest.no-hint", cmd.Flags().Lookup("no-hint"))
+	_ = viper.BindPFlag("suggest.amend", cmd.Flags().Lookup("amend"))
+	_ = viper.BindPFlag("suggest.force_push", cmd.Flags().Lookup("force"))
+}
+
+// MustGetBool is a helper to get a boolean flag value or panic on error.
+func MustGetBool(flags *pflag.FlagSet, name string) bool {
+	val, err := flags.GetBool(name)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
