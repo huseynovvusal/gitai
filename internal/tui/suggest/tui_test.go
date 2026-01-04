@@ -63,6 +63,26 @@ func (m *mockGitService) GetPullRequestURL(_ string) (string, error) {
 	return m.prURL, nil
 }
 
+func (m *mockGitService) GetLastCommitMessage() (string, error) {
+	return "last commit", nil
+}
+
+func (m *mockGitService) GetFilesInLastCommit() ([]string, error) {
+	return []string{"prev.go"}, nil
+}
+
+func (m *mockGitService) GetAmendChangesForFiles(_ []string) (string, error) {
+	return m.changesResponse, nil
+}
+
+func (m *mockGitService) CommitAmend(_ []string, _ string) error {
+	return m.commitErr
+}
+
+func (m *mockGitService) PushForce(_ context.Context, _ string) (string, error) {
+	return m.pushResponse, nil
+}
+
 // --- Tests ---
 
 func TestFileSelectorModel(t *testing.T) {

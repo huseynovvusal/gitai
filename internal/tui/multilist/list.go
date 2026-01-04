@@ -80,6 +80,25 @@ func WithTitleStyle(style lipgloss.Style) Option {
 	}
 }
 
+func WithSelected(selected []string) Option {
+	return func(l *list.Model) {
+		selectedMap := make(map[string]bool)
+		for _, s := range selected {
+			selectedMap[s] = true
+		}
+
+		items := l.Items()
+		for i, itm := range items {
+			item := itm.(Item)
+			if selectedMap[item.Value] {
+				item.Selected = true
+				items[i] = item
+			}
+		}
+		l.SetItems(items)
+	}
+}
+
 // New creates a list. The default title is empty, the default height is 20.
 // Pass options to override defaults.
 func New(data []string, title string, opts ...Option) Model {

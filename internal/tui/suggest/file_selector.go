@@ -20,14 +20,21 @@ type FileSelectorModel struct {
 	done      bool
 }
 
-func NewFileSelectorModel(files []string) FileSelectorModel {
+func NewFileSelectorModel(files []string, preSelectedFiles ...string) FileSelectorModel {
+	opts := []multilist.Option{
+		multilist.WithHeight(15),
+		multilist.WithPaginatorType(paginator.Arabic),
+	}
+
+	if len(preSelectedFiles) > 0 {
+		opts = append(opts, multilist.WithSelected(preSelectedFiles))
+	}
+
 	return FileSelectorModel{
 		MultiList: multilist.New(
 			files,
 			"Select files to include in commit",
-			multilist.WithHeight(15),
-			multilist.WithPaginatorType(paginator.Arabic),
-			multilist.WithRegexFiltering(),
+			opts...,
 		),
 		quitting: false,
 		done:     false,

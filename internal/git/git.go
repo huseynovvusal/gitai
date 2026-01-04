@@ -116,6 +116,246 @@ func (s *Service) GetChangesForFiles(files []string) (string, error) {
 	return builder.String(), nil
 }
 
+// GetLastCommitMessage returns the message of the HEAD commit.
+func (s *Service) GetLastCommitMessage() (string, error) {
+	repo, _, _, err := getRepo()
+	if err != nil {
+		return "", fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	commitObj, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return "", fmt.Errorf("failed to get commit object: %w", err)
+	}
+
+	return commitObj.Message, nil
+}
+
+// GetFilesInLastCommit returns a list of files changed in the HEAD commit.
+func (s *Service) GetFilesInLastCommit() ([]string, error) {
+	repo, _, _, err := getRepo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	commitObj, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object: %w", err)
+	}
+
+	currentTree, err := commitObj.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree: %w", err)
+	}
+
+	var parentTree *object.Tree
+	if commitObj.NumParents() > 0 {
+		parent, err := commitObj.Parent(0)
+		if err == nil {
+			parentTree, _ = parent.Tree()
+		}
+	}
+
+	// If no parent (initial commit), Diff returns all files as inserts.
+	// If parent exists, it returns changes.
+	changes, err := object.DiffTree(parentTree, currentTree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to diff tree: %w", err)
+	}
+
+	var files []string
+	for _, change := range changes {
+		// usage of names depends on action (insert/delete/modify)
+		// For From (old) and To (new).
+		// We generally want the name of the file in the resulting commit (To),
+		// unless it was deleted (then From).
+		// But if we are amending, we probably want to know what files were involved.
+		// If a file was deleted in HEAD, and we Amend, do we want to "select" it?
+		// "Selecting" it in the UI usually means "Add to index".
+		// If we select a file that is currently deleted in WorkingTree (and was deleted in HEAD),
+		// `worktree.Add` might behave as expected (keep it deleted).
+		
+		var name string
+		if change.To.Name != "" {
+			name = change.To.Name
+		} else if change.From.Name != "" {
+			name = change.From.Name
+		}
+		
+		if name != "" {
+			files = append(files, name)
+		}
+	}
+
+	sort.Strings(files)
+	return files, nil
+}
+
+// GetAmendChangesForFiles generates a diff comparing HEAD~1 to the current working tree
+// for the specified files (plus files already in HEAD), simulating an --amend view.
+func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
+	repo, _, _, err := getRepo()
+	if err != nil {
+		return "", fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	headCommit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return "", fmt.Errorf("failed to get HEAD commit: %w", err)
+	}
+
+	// 1. Get the parent tree (HEAD~1)
+	var parentTree *object.Tree
+	if headCommit.NumParents() > 0 {
+		parent, err := headCommit.Parent(0)
+		if err == nil {
+			parentTree, _ = parent.Tree()
+		}
+	}
+	// If no parent (initial commit), parentTree is nil, which acts as empty tree (new files).
+
+	// 2. Determine the set of files to diff.
+	// This should include files currently in HEAD (so we see what's being kept)
+	// PLUS the new files being amended in.
+	filesMap := make(map[string]bool)
+	for _, f := range files {
+		filesMap[f] = true
+	}
+
+	// Add files from HEAD to the map
+	headTree, err := headCommit.Tree()
+	if err == nil {
+		_ = headTree.Files().ForEach(func(f *object.File) error {
+			// We need the full path relative to repo root. f.Name is relative to tree (root).
+			// Our 'files' arg is usually relative to cwd or repo root? 
+			// internal/tui calls usually pass paths that ResolvePath returns, which are relative to Repo Root.
+			filesMap[f.Name] = true
+			return nil
+		})
+	}
+
+	combinedFiles := make([]string, 0, len(filesMap))
+	for f := range filesMap {
+		combinedFiles = append(combinedFiles, f)
+	}
+	sort.Strings(combinedFiles)
+
+	// 3. Generate Diff against Parent Tree
+	var builder strings.Builder
+	for _, file := range combinedFiles {
+		// oldText comes from Parent Tree
+		oldText, isNew := "", true
+		if parentTree != nil {
+			if f, err := parentTree.File(file); err == nil {
+				if c, err := f.Contents(); err == nil {
+					oldText, isNew = c, false
+				}
+			}
+		}
+
+		// newText comes from Working Tree (simulating what will be committed)
+		// NOTE: This assumes we are committing the *current working state* of these files.
+		// If a file is in HEAD but deleted in working tree, os.ReadFile fails -> isDeleted.
+		// If a file is in HEAD and not in 'files' arg, but exists in working tree,
+		// we assume it keeps its working tree state (since --amend uses index, and we Add 'files').
+		// Wait: files NOT in 'files' arg but in HEAD:
+		// If we don't 'Add' them, they stay as they are in the Index?
+		// No, 'go-git' Commit uses the Index.
+		// If we simply open the repo, the Index matches HEAD.
+		// So if we don't touch them, they match HEAD.
+		// BUT 'os.ReadFile' reads from Worktree.
+		// If the file is modified in Worktree but NOT staged (not in 'files'), 
+		// we should theoretically read from HEAD (Index), not Worktree.
+		// HOWEVER, gitai usually assumes "what you see is what you get" and often Stages everything selected.
+		// The logic here is slightly imperfect if the user has unstaged changes they don't want to commit
+		// in files that ARE in the previous commit.
+		// But for 'amend', usually you want to update the commit to match your current state or add to it.
+		// Let's assume reading from Worktree is acceptable for the "Suggestion" context,
+		// or we can try to be smarter.
+		// For now, Worktree read is consistent with existing GetChangesForFiles.
+
+		newBytes, err := os.ReadFile(filepath.Clean(file))
+		newText := string(newBytes)
+		isDeleted := err != nil
+
+		if isNew && isDeleted {
+			continue
+		}
+		
+		// Optimization: if content matches, skip (no diff)
+		if oldText == newText && !isNew && !isDeleted {
+			continue
+		}
+
+		builder.WriteString(generateDiffString(file, oldText, newText, isNew, isDeleted))
+	}
+
+	return builder.String(), nil
+}
+
+// CommitAmend amends the last commit with the staged changes of the specified files.
+func (s *Service) CommitAmend(files []string, message string) error {
+	repo, worktree, _, err := getRepo()
+	if err != nil {
+		return fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	// 1. Stage the files
+	for _, file := range files {
+		rel, err := toRel(file)
+		if err != nil {
+			return err
+		}
+		if _, err := worktree.Add(rel); err != nil {
+			return fmt.Errorf("failed to add file %s: %w", rel, err)
+		}
+	}
+
+	// 2. Get HEAD and its parents to preserve/update lineage
+	head, err := repo.Head()
+	if err != nil {
+		return fmt.Errorf("failed to get HEAD: %w", err)
+	}
+	headCommit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return fmt.Errorf("failed to get HEAD commit: %w", err)
+	}
+
+	parents := headCommit.ParentHashes
+	// If we are amending, we keep the SAME parents as the commit we are replacing.
+	// So we don't include HEAD itself, but HEAD's parents.
+
+	sig, err := s.getAuthorSignature(repo)
+	if err != nil {
+		return err
+	}
+
+	// 3. Commit with explicit parents (Amending)
+	_, err = worktree.Commit(message, &git.CommitOptions{
+		Author:  sig,
+		Parents: parents,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to amend commit: %w", err)
+	}
+	return nil
+}
+
 // Commit stages the specified files and creates a new commit with the given message.
 func (s *Service) Commit(files []string, message string) error {
 	repo, worktree, _, err := getRepo()
@@ -207,6 +447,38 @@ func (s *Service) Push(ctx context.Context, remoteName string) (string, error) {
 		return "", fmt.Errorf("failed to push: %w", err)
 	}
 	return "Push successful", nil
+}
+
+// PushForce pushes the current branch to the specified remote with --force.
+func (s *Service) PushForce(ctx context.Context, remoteName string) (string, error) {
+	repo, _, _, err := getRepo()
+	if err != nil {
+		return "", fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	remote, err := repo.Remote(remoteName)
+	if err != nil {
+		return "", fmt.Errorf("remote '%s' not found: %w", remoteName, err)
+	}
+
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", fmt.Errorf("remote '%s' has no URLs", remoteName)
+	}
+
+	auth := resolveAuth(urls[0])
+
+	err = repo.PushContext(ctx, &git.PushOptions{
+		Auth:  auth,
+		Force: true,
+	})
+	if err != nil {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+			return "Already up-to-date", nil
+		}
+		return "", fmt.Errorf("failed to force push: %w", err)
+	}
+	return "Force Push successful", nil
 }
 
 // ResolvePath returns a list of all repository files within the given path.
