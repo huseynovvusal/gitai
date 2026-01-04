@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -513,8 +514,20 @@ func formatStatusCode(c git.StatusCode) rune {
 	}
 }
 
+// generateDiffString creates a unified diff compatible with standard git output.
+//
+// NOTE: We intentionally use the verbose "diff --git" header format (instead of
+// simpler custom formats like "M file.go") because LLMs perform significantly
+// better with it. The standard git headers act as strong "mental anchors" that
+// prevent context bleeding between files and align with the model's training data.
 func generateDiffString(path, oldText, newText string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
+	patches := dmp.PatchMake(oldText, newText)
+	patchText := dmp.PatchToText(patches)
+
+	// Normalize the text to avoid URL encoding
+	decoded, _ := url.PathUnescape(patchText)
+
 	diffs := dmp.DiffMain(oldText, newText, false)
 	dmp.DiffCleanupSemantic(diffs)
 
@@ -529,27 +542,7 @@ func generateDiffString(path, oldText, newText string, isNew, isDel bool) string
 		builder.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
 
-	builder.WriteString("@@ -1 +1 @@\n")
-
-	for _, diffObj := range diffs {
-		lines := strings.Split(diffObj.Text, "\n")
-		prefix := " "
-		switch diffObj.Type {
-		case diffmatchpatch.DiffInsert:
-			prefix = "+"
-		case diffmatchpatch.DiffDelete:
-			prefix = "-"
-		}
-
-		for i, line := range lines {
-			if i == len(lines)-1 && line == "" {
-				continue
-			}
-			builder.WriteString(prefix)
-			builder.WriteString(line)
-			builder.WriteString("\n")
-		}
-	}
+	builder.WriteString(decoded)
 
 	return builder.String()
 }
