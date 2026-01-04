@@ -7,14 +7,16 @@ import (
 
 func TestCheckDiffSafety_Absolute(t *testing.T) {
 	keywords := []string{"secret"}
-	// Valid unified diff with @@ header
-	diff := "diff --git b/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1,1 +1,1 @@\n+my secret"
-	absPath := "/tmp/a.go"
-	diffAbs := strings.ReplaceAll(diff, "a.go", absPath)
+	// Properly formatted diff with absolute paths
+	diff := `diff --git /tmp/a.go /tmp/a.go
+--- /tmp/a.go
++++ /tmp/a.go
+@@ -1,1 +1,1 @@
++my secret`
 
-	err := CheckDiffSafety(diffAbs, keywords)
+	err := CheckDiffSafety(diff, keywords)
 	if err == nil {
-		t.Error("expected error for absolute path diff containing secret")
+		t.Error("expected error for absolute path diff containing secret, but got nil")
 	}
 }
 
@@ -56,23 +58,47 @@ func TestCheckDiffSafety(t *testing.T) {
 		},
 		{
 			name: "Safe diff",
-			diff: `diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1,1 +1,1 @@\n-old code\n+new code`,
+			diff: `diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -1,1 +1,1 @@
+-old code
++new code`,
 			expectError: false,
 		},
 		{
 			name: "Keyword in added line",
-			diff: `diff --git a/config.go b/config.go\n--- a/config.go\n+++ b/config.go\n@@ -1,1 +1,2 @@\n+package config\n+const API_KEY = "12345"`,
+			diff: `diff --git a/config.go b/config.go
+--- a/config.go
++++ b/config.go
+@@ -1,1 +1,2 @@
++package config
++const API_KEY = "12345"`,
 			expectError: true,
 			errContains: "config.go",
 		},
 		{
 			name: "Keyword in removed line (safe)",
-			diff: `diff --git a/config.go b/config.go\n--- a/config.go\n+++ b/config.go\n@@ -1,2 +1,1 @@\n-const API_KEY = "12345"\n+const SAFE = "ok"`,
+			diff: `diff --git a/config.go b/config.go
+--- a/config.go
++++ b/config.go
+@@ -1,2 +1,1 @@
+-const API_KEY = "12345"
++const SAFE = "ok"`,
 			expectError: false,
 		},
 		{
 			name: "Multiple findings",
-			diff: `diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1,1 +1,1 @@\n+my secret\ndiff --git b/b.go b/b.go\n--- a/b.go\n+++ b/b.go\n@@ -1,1 +1,1 @@\n+my api_key`,
+			diff: `diff --git a/a.go b/a.go
+--- a/a.go
++++ b/a.go
+@@ -1,1 +1,1 @@
++my secret
+diff --git b/b.go b/b.go
+--- a/b.go
++++ b/b.go
+@@ -1,1 +1,1 @@
++my api_key`,
 			expectError: true,
 			errContains: "a.go",
 		},

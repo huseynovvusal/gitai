@@ -74,7 +74,8 @@ func TestResolveAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := resolveAuth(tt.url)
+			result := resolveAuth(tt.url)
+			var err error
 			if tt.wantsNil {
 				if result != nil {
 					t.Errorf("resolveAuth(%q) expected nil, got %v", tt.url, result)
@@ -96,10 +97,7 @@ func TestResolveAuth(t *testing.T) {
 
 func TestResolveAuth_Callback(t *testing.T) {
 	// Trigger the callback to cover its internal logic
-	auth, err := resolveAuth("git@github.com:artback/gitai.git")
-	if err != nil {
-		t.Fatal(err)
-	}
+	auth := resolveAuth("git@github.com:artback/gitai.git")
 
 	pkc, ok := auth.(*gitssh.PublicKeysCallback)
 	if !ok {

@@ -197,10 +197,7 @@ func (s *Service) Push(ctx context.Context, remoteName string) (string, error) {
 		return "", fmt.Errorf("remote '%s' has no URLs", remoteName)
 	}
 
-	auth, err := resolveAuth(urls[0])
-	if err != nil {
-		return "", err
-	}
+	auth := resolveAuth(urls[0])
 
 	err = repo.PushContext(ctx, &git.PushOptions{Auth: auth})
 	if err != nil {
@@ -317,7 +314,7 @@ func ExtractVersionFromDiff(diffText string) string {
 			!strings.Contains(strings.ToLower(currentFile), "test")
 
 		if isPotentialVersionFile || containsVersionKeyword {
-			// Extract from removed line
+			// Extract from a removed line
 			if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
 				content := line[1:]
 				if matches := versionRegex.FindStringSubmatch(content); len(matches) > 1 {
@@ -380,13 +377,13 @@ func (s *Service) GetPullRequestURL(remoteName string) (string, error) {
 
 // --- Internal Helper Functions ---
 
-func resolveAuth(urlStr string) (transport.AuthMethod, error) {
+func resolveAuth(urlStr string) transport.AuthMethod {
 	if strings.HasPrefix(urlStr, "http") {
-		return nil, errors.New("http URLs are not supported")
+		return nil
 	}
 
 	if !strings.HasPrefix(urlStr, "ssh://") && !strings.Contains(urlStr, "@") {
-		return nil, errors.New("invalid URL format")
+		return nil
 	}
 
 	user := "git"
@@ -436,7 +433,7 @@ func resolveAuth(urlStr string) (transport.AuthMethod, error) {
 
 	auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
 
-	return auth, nil
+	return auth
 }
 
 func getRepo() (*git.Repository, *git.Worktree, string, error) {
