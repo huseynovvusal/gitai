@@ -27,6 +27,7 @@ func NewFileSelectorModel(files []string) FileSelectorModel {
 			"Select files to include in commit",
 			multilist.WithHeight(15),
 			multilist.WithPaginatorType(paginator.Arabic),
+			multilist.WithRegexFiltering(),
 		),
 		quitting: false,
 		done:     false,

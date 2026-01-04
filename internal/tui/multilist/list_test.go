@@ -47,6 +47,106 @@ func TestModel(t *testing.T) {
 	}
 }
 
+func TestModel_NavigationAndToggle(t *testing.T) {
+	data := []string{"item1", "item2", "item3"}
+	m := New(data, "Nav Test")
+
+	// 1. Move down to "item2"
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+
+	// 2. Toggle "item2"
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+
+	selected := m.GetSelected()
+	if len(selected) != 1 || selected[0] != "item2" {
+		t.Errorf("expected [item2], got %v", selected)
+	}
+
+	// 3. Move down to "item3"
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+
+	// 4. Toggle "item3"
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+
+	selected = m.GetSelected()
+	if len(selected) != 2 {
+		t.Errorf("expected 2 items selected, got %d", len(selected))
+	}
+}
+
+func TestModel_Options(t *testing.T) {
+	data := []string{"A"}
+	m := New(data, "Options Test", WithHeight(50), WithWidth(80), WithStatusBar(true))
+
+	if m.List.Height() != 50 {
+		t.Errorf("expected height 50, got %d", m.List.Height())
+	}
+
+	if m.List.Width() != 80 {
+		t.Errorf("expected width 80, got %d", m.List.Width())
+	}
+	
+	// Note: checking ShowStatusBar directly might require inspecting the model structure 
+	// or assuming the option func logic is correct if height/width worked.
+}
+
+func TestRegexFilter(t *testing.T) {
+	targets := []string{"main.go", "internal/ai/ai.go", "internal/git/git.go", "README.md"}
+
+	tests := []struct {
+		name     string
+		term     string
+		expected []int // Indices in targets
+	}{
+		{
+			name:     "Exact match",
+			term:     "main.go",
+			expected: []int{0},
+		},
+		{
+			name:     "Simplified Wildcard",
+			term:     "*.go", // Should match .*.go -> anything ending in .go (if suffix match works)
+			// Actually * at start means .* at start. ".*.go" matches "file.go".
+			expected: []int{0, 1, 2},
+		},
+		{
+			name:     "Suffix match",
+			term:     "\\.go$",
+			expected: []int{0, 1, 2},
+		},
+		{
+			name:     "Directory match",
+			term:     "internal/",
+			expected: []int{1, 2},
+		},
+		{
+			name:     "Case sensitive (default re)",
+			term:     "readme",
+			expected: nil,
+		},
+		{
+			name:     "Invalid regex",
+			term:     "[",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ranks := regexFilter(tt.term, targets)
+			if len(ranks) != len(tt.expected) {
+				t.Fatalf("expected %d matches, got %d", len(tt.expected), len(ranks))
+			}
+
+			for i, r := range ranks {
+				if r.Index != tt.expected[i] {
+					t.Errorf("expected match at index %d, got %d", tt.expected[i], r.Index)
+				}
+			}
+		})
+	}
+}
+
 func TestModel_Filtering(t *testing.T) {
 	data := []string{"abc", "def", "ghi"}
 	m := New(data, "Test")
