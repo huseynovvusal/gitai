@@ -55,8 +55,12 @@ var suggestCmd = &cobra.Command{
 		service := ai.NewService(aiProvider)
 
 		editorMode := viper.GetString("suggest.editor")
+		hint := viper.GetString("suggest.hint")
+		skipHint := viper.GetBool("suggest.no-hint")
 
-		flow := suggest.NewFlow(rootCtx, service, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor)
+		flow := suggest.NewFlow(rootCtx, service, editorMode, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
+			WithHint(hint).
+			WithSkipHint(skipHint)
 		flow.Run(args)
 	},
 }
@@ -67,11 +71,17 @@ func init() {
 	suggestCmd.Flags().StringP("editor", "e", "system", "Editor to use for commit messages (builtin, system, or command)")
 	suggestCmd.Flags().Float64P("temperature", "t", 0.7, "Temperature for AI generation")
 	suggestCmd.Flags().Int64("max_tokens", 256, "Maximum tokens for AI generation")
+	suggestCmd.Flags().StringP("hint", "H", "", "Provide a hint for the commit message directly")
+	suggestCmd.Flags().Bool("no-hint", false, "Skip the hint input prompt")
+
 	_ = viper.BindPFlag("ai.provider", suggestCmd.Flags().Lookup("provider"))
 	_ = viper.BindPFlag("ai.api_key", suggestCmd.Flags().Lookup("api_key"))
 	_ = viper.BindPFlag("suggest.editor", suggestCmd.Flags().Lookup("editor"))
 	_ = viper.BindPFlag("ai.temperature", suggestCmd.Flags().Lookup("temperature"))
 	_ = viper.BindPFlag("ai.max_tokens", suggestCmd.Flags().Lookup("max_tokens"))
+	_ = viper.BindPFlag("suggest.hint", suggestCmd.Flags().Lookup("hint"))
+	_ = viper.BindPFlag("suggest.no-hint", suggestCmd.Flags().Lookup("no-hint"))
+
 	rootCmd.AddCommand(suggestCmd)
 }
 

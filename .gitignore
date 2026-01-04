@@ -49,3 +49,6 @@ release/
 
 # Gitai specific
 gitai.yaml
+
+#wiki
+docs/

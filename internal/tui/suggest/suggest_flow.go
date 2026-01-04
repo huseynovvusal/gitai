@@ -19,6 +19,8 @@ type Flow struct {
 	generator      ai.CommitMessageGenerator
 	editorMode     string
 	hintProcessors []HintProcessor
+	hint           string
+	skipHint       bool
 }
 
 func NewFlow(ctx context.Context, generator ai.CommitMessageGenerator, editorMode string, hintProcessors ...HintProcessor) *Flow {
@@ -28,6 +30,16 @@ func NewFlow(ctx context.Context, generator ai.CommitMessageGenerator, editorMod
 		editorMode:     editorMode,
 		hintProcessors: hintProcessors,
 	}
+}
+
+func (s *Flow) WithHint(hint string) *Flow {
+	s.hint = hint
+	return s
+}
+
+func (s *Flow) WithSkipHint(skip bool) *Flow {
+	s.skipHint = skip
+	return s
 }
 
 func (s *Flow) Run(filesFromArgs []string) {
@@ -50,9 +62,12 @@ func (s *Flow) Run(filesFromArgs []string) {
 	}
 
 	// 3. Get User Hint
-	hint, err := s.runHintInput()
-	if err != nil {
-		return // User quit
+	hint := s.hint
+	if !s.skipHint && hint == "" {
+		hint, err = s.runHintInput()
+		if err != nil {
+			return // User quit
+		}
 	}
 
 	// 4. Run AI Generation Flow
