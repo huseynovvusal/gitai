@@ -14,7 +14,7 @@ func Execute(version string) {
 		Short:   "Gitai is a CLI tool to interact with Git repositories using AI",
 		Long:    `Gitai allows you to perform various Git operations with the help of AI, making version control easier and more intuitive.`,
 	}
-	rootCmd.AddCommand(suggestCmd)
+	rootCmd.AddCommand(NewSuggestCmd())
 	err := rootCmd.Execute()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

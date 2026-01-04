@@ -15,91 +15,88 @@ import (
 	"huseynovvusal/gitai/internal/tui/suggest"
 )
 
-var suggestCmd = &cobra.Command{
-	Use:   "suggest [files...]",
-	Short: "Suggest commit messages for changed files using AI",
-	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		gitService := git.NewService()
-		files, err := gitService.GetChangedFiles()
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
+func NewSuggestCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "suggest [files...]",
+		Short: "Suggest commit messages for changed files using AI",
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			gitService := git.NewService()
+			files, err := gitService.GetChangedFiles()
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
 
-		repoRoot, err := git.GetGitRoot()
-		if err != nil {
-			return files, cobra.ShellCompDirectiveNoFileComp
-		}
+			repoRoot, err := git.GetGitRoot()
+			if err != nil {
+				return files, cobra.ShellCompDirectiveNoFileComp
+			}
 
-		cwd, err := os.Getwd()
-		if err != nil {
-			return files, cobra.ShellCompDirectiveNoFileComp
-		}
+			cwd, err := os.Getwd()
+			if err != nil {
+				return files, cobra.ShellCompDirectiveNoFileComp
+			}
 
-		return getFilteredSuggestions(toComplete, args, files, repoRoot, cwd, gitService), cobra.ShellCompDirectiveNoFileComp
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		rootCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+			return getFilteredSuggestions(toComplete, args, files, repoRoot, cwd, gitService), cobra.ShellCompDirectiveNoFileComp
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			rootCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-		cfg, err := config.LoadConfig(viper.GetViper())
-		if err != nil {
-			cmd.PrintErrln("Error loading config:", err)
+			cfg, err := config.LoadConfig(viper.GetViper())
+			if err != nil {
+				cmd.PrintErrln("Error loading config:", err)
 
-			return
-		}
+				return
+			}
 
-		providerEnum, err := provider.ParseProvider(cfg.AI.Provider)
-		if err != nil {
-			cmd.PrintErrln("Invalid provider:", err)
+			providerEnum, err := provider.ParseProvider(cfg.AI.Provider)
+			if err != nil {
+				cmd.PrintErrln("Invalid provider:", err)
 
-			return
-		}
+				return
+			}
 
-		aiProvider, err := provider.NewAIProvider(providerEnum, provider.Config{
-			APIKey:      cfg.AI.APIKey,
-			MaxTokens:   cfg.AI.MaxTokens,
-			Temperature: cfg.AI.Temperature,
-			OllamaPath:  cfg.Ollama.Path,
-		})
-		if err != nil {
-			cmd.PrintErrln("Error creating AI provider:", err)
+			aiProvider, err := provider.NewAIProvider(providerEnum, provider.Config{
+				APIKey:      cfg.AI.APIKey,
+				MaxTokens:   cfg.AI.MaxTokens,
+				Temperature: cfg.AI.Temperature,
+				OllamaPath:  cfg.Ollama.Path,
+			})
+			if err != nil {
+				cmd.PrintErrln("Error creating AI provider:", err)
 
-			return
-		}
+				return
+			}
 
-		service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint)
+			service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint)
 
-		gitService := git.NewService()
+			gitService := git.NewService()
 
-		flowConfig := suggest.FlowConfig{
-			EditorMode:       cfg.Suggest.Editor,
-			SecurityKeywords: cfg.Security.Keywords,
-		}
+			amend := cfg.Suggest.Amend
+			force := cfg.Suggest.ForcePush
 
-		flow := suggest.NewFlow(service, gitService, flowConfig, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
-			WithHint(cfg.Suggest.Hint).
-			WithSkipHint(cfg.Suggest.NoHint)
-		flow.Run(rootCtx, args)
-	},
-}
+			if force && !amend {
+				cmd.PrintErrln("Error: --force can only be used with --amend")
+				return
+			}
 
-func init() {
-	suggestCmd.Flags().StringP("provider", "p", "", "AI provider to use (gpt|gemini|ollama|geminicli). If empty, uses env or config or default")
-	suggestCmd.Flags().StringP("api_key", "k", "", "Optional API key to provide to AI provider")
-	suggestCmd.Flags().StringP("editor", "e", "system", "Editor to use for commit messages (builtin, system, or command)")
-	suggestCmd.Flags().Float64P("temperature", "t", 0.7, "Temperature for AI generation")
-	suggestCmd.Flags().Int64("max_tokens", 256, "Maximum tokens for AI generation")
-	suggestCmd.Flags().StringP("hint", "H", "", "Provide a hint for the commit message directly")
-	suggestCmd.Flags().Bool("no-hint", false, "Skip the hint input prompt")
+			flowConfig := suggest.FlowConfig{
+				EditorMode:       cfg.Suggest.Editor,
+				SecurityKeywords: cfg.Security.Keywords,
+				Amend:            amend,
+				ForcePush:        force,
+			}
 
-	_ = viper.BindPFlag("ai.provider", suggestCmd.Flags().Lookup("provider"))
-	_ = viper.BindPFlag("ai.api_key", suggestCmd.Flags().Lookup("api_key"))
-	_ = viper.BindPFlag("suggest.editor", suggestCmd.Flags().Lookup("editor"))
-	_ = viper.BindPFlag("ai.temperature", suggestCmd.Flags().Lookup("temperature"))
-	_ = viper.BindPFlag("ai.max_tokens", suggestCmd.Flags().Lookup("max_tokens"))
-	_ = viper.BindPFlag("suggest.hint", suggestCmd.Flags().Lookup("hint"))
-	_ = viper.BindPFlag("suggest.no-hint", suggestCmd.Flags().Lookup("no-hint"))
+			flow := suggest.NewFlow(service, gitService, flowConfig, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
+				WithHint(cfg.Suggest.Hint).
+				WithSkipHint(cfg.Suggest.NoHint)
+			flow.Run(rootCtx, args)
+		},
+	}
 
+	config.RegisterSuggestFlags(cmd)
+
+	return cmd
 }
 
 type gitService interface {

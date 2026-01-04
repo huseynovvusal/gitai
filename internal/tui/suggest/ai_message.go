@@ -64,6 +64,9 @@ const (
 type messageGitService interface {
 	GitDiffStatus
 	GitCommitter
+	GetAmendChangesForFiles(files []string) (string, error)
+	CommitAmend(files []string, message string) error
+	PushForce(ctx context.Context, remoteName string) (string, error)
 }
 
 type AIMessageModel struct {
@@ -88,6 +91,8 @@ type AIMessageModel struct {
 type MessageConfig struct {
 	EditorMode       string
 	SecurityKeywords []string
+	Amend            bool
+	ForcePush        bool
 }
 
 func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, gs messageGitService, cfg MessageConfig, hint string) AIMessageModel {
@@ -124,11 +129,18 @@ type runAIParams struct {
 	files            []string
 	securityKeywords []string
 	hint             string
+	amend            bool
 }
 
 func runAIAsync(p runAIParams) tea.Cmd {
 	return func() tea.Msg {
-		diff, err := p.gitService.GetChangesForFiles(p.files)
+		var diff string
+		var err error
+		if p.amend {
+			diff, err = p.gitService.GetAmendChangesForFiles(p.files)
+		} else {
+			diff, err = p.gitService.GetChangesForFiles(p.files)
+		}
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -167,17 +179,28 @@ func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessag
 	}
 }
 
-func runCommitAsync(gs messageGitService, files []string, message string) tea.Cmd {
+func runCommitAsync(gs messageGitService, files []string, message string, amend bool) tea.Cmd {
 	return func() tea.Msg {
-		err := gs.Commit(files, message)
+		var err error
+		if amend {
+			err = gs.CommitAmend(files, message)
+		} else {
+			err = gs.Commit(files, message)
+		}
 
 		return commitResultMsg{err: err}
 	}
 }
 
-func runPushAsync(ctx context.Context, gs messageGitService, remote string) tea.Cmd {
+func runPushAsync(ctx context.Context, gs messageGitService, remote string, force bool) tea.Cmd {
 	return func() tea.Msg {
-		out, err := gs.Push(ctx, remote)
+		var out string
+		var err error
+		if force {
+			out, err = gs.PushForce(ctx, remote)
+		} else {
+			out, err = gs.Push(ctx, remote)
+		}
 
 		return pushResultMsg{err: err, output: out}
 	}
@@ -244,6 +267,7 @@ func (m *AIMessageModel) Init() tea.Cmd {
 			files:            m.files,
 			securityKeywords: m.config.SecurityKeywords,
 			hint:             m.hint,
+			amend:            m.config.Amend,
 		}),
 	)
 }
@@ -300,7 +324,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StateCommitting
 				m.errMsg = ""
 
-				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.gitService, m.files, m.commitMessage))
+				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.gitService, m.files, m.commitMessage, m.config.Amend))
 			}
 		case "p":
 			// allow pushing only when we've committed
@@ -308,7 +332,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StatePushing
 				m.errMsg = ""
 
-				return m, tea.Batch(m.spinner.Tick, runPushAsync(m.ctx, m.gitService, "origin"))
+				return m, tea.Batch(m.spinner.Tick, runPushAsync(m.ctx, m.gitService, "origin", m.config.ForcePush))
 			}
 		case "e":
 			if m.state == StateGenerated {

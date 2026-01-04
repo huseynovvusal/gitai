@@ -42,6 +42,11 @@ type suggestGitService interface {
 	GitPRGenerator
 	GitDiffStatus
 	GitCommitter
+	GetLastCommitMessage() (string, error)
+	GetFilesInLastCommit() ([]string, error)
+	GetAmendChangesForFiles(files []string) (string, error)
+	CommitAmend(files []string, message string) error
+	PushForce(ctx context.Context, remoteName string) (string, error)
 }
 
 type Flow struct {
@@ -56,6 +61,8 @@ type Flow struct {
 type FlowConfig struct {
 	EditorMode       string
 	SecurityKeywords []string
+	Amend            bool
+	ForcePush        bool
 }
 
 func NewFlow(generator ai.CommitMessageGenerator, gs suggestGitService, cfg FlowConfig, hintProcessors ...HintProcessor) *Flow {
@@ -86,6 +93,16 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 		panic(err)
 	}
 
+	var preSelectedFiles []string
+	if s.config.Amend {
+		prevFiles, err := s.gitService.GetFilesInLastCommit()
+		if err == nil {
+			preSelectedFiles = prevFiles
+			// Merge previous files into available files so they appear in the list
+			changedFiles = uniqueStrings(append(changedFiles, prevFiles...))
+		}
+	}
+
 	if len(changedFiles) == 0 {
 		println("No changed files to commit.")
 
@@ -93,7 +110,7 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 	}
 
 	// 2. Determine which files to use (via Args or UI)
-	selectedFiles := s.selectFiles(changedFiles, filesFromArgs)
+	selectedFiles := s.selectFiles(changedFiles, filesFromArgs, preSelectedFiles)
 	if len(selectedFiles) == 0 {
 		println("No valid files selected.")
 
@@ -113,6 +130,8 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 	aiModel := NewAIMessageModel(ctx, selectedFiles, s.generator, s.gitService, MessageConfig{
 		EditorMode:       s.config.EditorMode,
 		SecurityKeywords: s.config.SecurityKeywords,
+		Amend:            s.config.Amend,
+		ForcePush:        s.config.ForcePush,
 	}, hint)
 	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(ctx))
 
@@ -128,14 +147,19 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 }
 
 // selectFiles determines if we filter arguments or show the UI selector.
-func (s *Flow) selectFiles(availableFiles []string, args []string) []string {
+func (s *Flow) selectFiles(availableFiles []string, args []string, preSelected []string) []string {
 	if len(args) > 0 {
 		// Logic extracted here for testability
+		// If args are provided, we ignore preSelected from Amend?
+		// Or should we merge them?
+		// Standard git commit --amend [files] usually ONLY updates [files].
+		// But here we are generating a message for the *result*.
+		// If user provides args, they probably mean "only these files".
 		return s.FilterCompatibleFiles(availableFiles, args)
 	}
 
 	// Fallback to TUI if no args provided
-	fileSelectorModel := NewFileSelectorModel(availableFiles)
+	fileSelectorModel := NewFileSelectorModel(availableFiles, preSelected...)
 
 	fileSelectorProgram := tea.NewProgram(&fileSelectorModel)
 	if _, err := fileSelectorProgram.Run(); err != nil {

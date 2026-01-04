@@ -29,6 +29,8 @@ type SuggestConfig struct {
 	BulletPoint string
 	Hint        string
 	NoHint      bool
+	Amend       bool
+	ForcePush   bool
 }
 
 type SecurityConfig struct {
