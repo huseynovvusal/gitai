@@ -14,7 +14,7 @@ func TestCheckDiffSafety_Absolute(t *testing.T) {
 +my secret`
 	// If we provide an absolute path in the diff, it should skip Join
 	absPath := "/tmp/a.go"
-	diffAbs := strings.Replace(diff, "a.go", absPath, -1)
+	diffAbs := strings.ReplaceAll(diff, "a.go", absPath)
 	err := CheckDiffSafety(diffAbs, keywords)
 	if err == nil {
 		t.Error("expected error for absolute path diff")

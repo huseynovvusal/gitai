@@ -203,6 +203,9 @@ func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, er
 		return nil, err
 	}
 	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return nil, err
+	}
 
 	info, err := os.Stat(abs)
 	if err != nil || !info.IsDir() {
@@ -390,6 +393,7 @@ func getHeadTree(r *git.Repository) (*object.Tree, error) {
 	return c.Tree()
 }
 
+// formatStatusCode maps a git status code to its porcelain rune representation.
 func formatStatusCode(c git.StatusCode) rune {
 	switch c {
 	case git.Unmodified:
@@ -411,6 +415,12 @@ func formatStatusCode(c git.StatusCode) rune {
 	}
 }
 
+// generateDiffString creates a unified diff compatible with standard git output.
+//
+// NOTE: We intentionally use the verbose "diff --git" header format (instead of
+// simpler custom formats like "M file.go") because LLMs perform significantly
+// better with it. The standard git headers act as strong "mental anchors" that
+// prevent context bleeding between files and align with the model's training data.
 func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
 	diffs := dmp.DiffMain(old, new, false)
@@ -429,9 +439,10 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	for _, d := range diffs {
 		lines := strings.Split(d.Text, "\n")
 		prefix := " "
-		if d.Type == diffmatchpatch.DiffInsert {
+		switch d.Type {
+		case diffmatchpatch.DiffInsert:
 			prefix = "+"
-		} else if d.Type == diffmatchpatch.DiffDelete {
+		case diffmatchpatch.DiffDelete:
 			prefix = "-"
 		}
 
@@ -448,6 +459,7 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	return sb.String()
 }
 
+// normalizeGitURL converts git SSH or git:// URLs to an HTTPS web URL format.
 func normalizeGitURL(url string) string {
 	url = strings.TrimSpace(url)
 	url = strings.TrimSuffix(url, ".git")
