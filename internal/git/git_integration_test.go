@@ -113,12 +113,11 @@ func TestGetChangedFiles(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
-	ctx := context.Background()
-	gs := NewGitService()
+	gs := NewService()
 	w, _ := wRepo.Worktree()
 	os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("content1"), 0644)
 
-	files, _ := gs.GetChangedFiles(ctx)
+	files, _ := gs.GetChangedFiles()
 	if len(files) != 1 || files[0] != "file1.txt" {
 		t.Errorf("expected [file1.txt], got %v", files)
 	}
@@ -128,7 +127,7 @@ func TestGetChangedFiles(t *testing.T) {
 		Author: &object.Signature{Name: "Me", Email: "me@me.com", When: time.Now()},
 	})
 
-	files, _ = gs.GetChangedFiles(ctx)
+	files, _ = gs.GetChangedFiles()
 	if len(files) != 0 {
 		t.Errorf("expected [], got %v", files)
 	}
@@ -141,26 +140,25 @@ func TestCommit(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
-	ctx := context.Background()
-	gs := NewGitService()
+	gs := NewService()
 
 	// 1. Add/Commit
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
-	if err := gs.Commit(ctx, []string{"main.go"}, "Add main"); err != nil {
+	if err := gs.Commit([]string{"main.go"}, "Add main"); err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Delete/Commit
 	os.Remove(filepath.Join(dir, "main.go"))
-	if err := gs.Commit(ctx, []string{"main.go"}, "Delete main"); err != nil {
+	if err := gs.Commit([]string{"main.go"}, "Delete main"); err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Rename/Commit
 	os.WriteFile(filepath.Join(dir, "old.txt"), []byte("content"), 0644)
-	gs.Commit(ctx, []string{"old.txt"}, "Add old")
+	gs.Commit([]string{"old.txt"}, "Add old")
 	os.Rename(filepath.Join(dir, "old.txt"), filepath.Join(dir, "new.txt"))
-	if err := gs.Commit(ctx, []string{"old.txt", "new.txt"}, "Rename"); err != nil {
+	if err := gs.Commit([]string{"old.txt", "new.txt"}, "Rename"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -193,12 +191,11 @@ func TestGetChangesForFiles(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 	
-	ctx := context.Background()
-	gs := NewGitService()
+	gs := NewService()
 	w, _ := wRepo.Worktree()
 
 	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello"), 0644)
-	diff, _ := gs.GetChangesForFiles(ctx, []string{"new.txt"})
+	diff, _ := gs.GetChangesForFiles([]string{"new.txt"})
 	if !strings.Contains(diff, "new file") {
 		t.Error("expected new file diff")
 	}
@@ -209,7 +206,7 @@ func TestGetChangesForFiles(t *testing.T) {
 	})
 
 	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello world"), 0644)
-	diff, _ = gs.GetChangesForFiles(ctx, []string{"new.txt"})
+	diff, _ = gs.GetChangesForFiles([]string{"new.txt"})
 	if !strings.Contains(diff, "hello") || !strings.Contains(diff, "world") {
 		t.Errorf("diff missing expected content: %s", diff)
 	}
@@ -222,11 +219,10 @@ func TestGetStatusForFiles(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
-	ctx := context.Background()
-	gs := NewGitService()
+	gs := NewService()
 
 	os.WriteFile(filepath.Join(dir, "status.txt"), []byte("data"), 0644)
-	status, err := gs.GetStatusForFiles(ctx, []string{"status.txt"})
+	status, err := gs.GetStatusForFiles([]string{"status.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,8 +238,7 @@ func TestResolvePath(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 	
-	ctx := context.Background()
-	gs := NewGitService()
+	gs := NewService()
 	w, _ := wRepo.Worktree()
 
 	os.Mkdir(filepath.Join(dir, "subdir"), 0755)
@@ -269,7 +264,7 @@ func TestResolvePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := gs.ResolvePath(ctx, tt.path)
+			results, err := gs.ResolvePath(tt.path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -292,8 +287,7 @@ func TestGetPullRequestURL(t *testing.T) {
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
-	ctx := context.Background()
-	gs := NewGitService()
+	gs := NewService()
 
 	tests := []struct {
 		name     string
@@ -313,7 +307,7 @@ func TestGetPullRequestURL(t *testing.T) {
 			})
 			defer r.DeleteRemote("origin")
 
-			url, err := gs.GetPullRequestURL(ctx, "origin")
+			url, err := gs.GetPullRequestURL("origin")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -343,7 +337,7 @@ func TestPush(t *testing.T) {
 	os.Chdir(localDir)
 
 	ctx := context.Background()
-	gs := NewGitService()
+	gs := NewService()
 
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: "origin",

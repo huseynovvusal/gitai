@@ -58,16 +58,6 @@ const (
 	StateEditing                      // Internal editor active
 )
 
-type GitDiffStatus interface {
-	GetChangesForFiles(ctx context.Context, files []string) (string, error)
-	GetStatusForFiles(ctx context.Context, files []string) (string, error)
-}
-
-type GitCommitter interface {
-	Commit(ctx context.Context, files []string, message string) error
-	Push(ctx context.Context, remoteName string) (string, error)
-}
-
 type messageGitService interface {
 	GitDiffStatus
 	GitCommitter
@@ -132,14 +122,14 @@ type runAIParams struct {
 	hint             string
 }
 
-func runAIAsync(p runAIParams) tea.Cmd {
+func runAIAsync(ctx context.Context, p runAIParams) tea.Cmd {
 	return func() tea.Msg {
-		diff, err := p.gitService.GetChangesForFiles(p.ctx, p.files)
+		diff, err := p.gitService.GetChangesForFiles(p.files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		status, err := p.gitService.GetStatusForFiles(p.ctx, p.files)
+		status, err := p.gitService.GetStatusForFiles(p.files)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -149,7 +139,7 @@ func runAIAsync(p runAIParams) tea.Cmd {
 			return commitSecurityWarningMsg{err: err, diff: diff, status: status}
 		}
 
-		commitMessage, err := p.generator.Generate(p.ctx, diff, status, p.hint)
+		commitMessage, err := p.generator.Generate(ctx, diff, status, p.hint)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
@@ -169,9 +159,9 @@ func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessag
 	}
 }
 
-func runCommitAsync(ctx context.Context, gs messageGitService, files []string, message string) tea.Cmd {
+func runCommitAsync(gs messageGitService, files []string, message string) tea.Cmd {
 	return func() tea.Msg {
-		err := gs.Commit(ctx, files, message)
+		err := gs.Commit(files, message)
 		return commitResultMsg{err: err}
 	}
 }
@@ -224,8 +214,7 @@ func openEditor(content string, editorCmd string) tea.Cmd {
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		runAIAsync(runAIParams{
-			ctx:              m.ctx,
+		runAIAsync(m.ctx, runAIParams{
 			generator:        m.generator,
 			gitService:       m.gitService,
 			files:            m.files,
@@ -280,7 +269,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StateCommitting
 				m.errMsg = ""
 
-				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.ctx, m.gitService, m.files, m.commitMessage))
+				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.gitService, m.files, m.commitMessage))
 			}
 		case "p":
 			// allow pushing only when we've committed
@@ -304,8 +293,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateGenerated {
 				m.state = StateGenerating
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runAIAsync(runAIParams{
-					ctx:              m.ctx,
+				return m, tea.Batch(m.spinner.Tick, runAIAsync(m.ctx, runAIParams{
 					generator:        m.generator,
 					gitService:       m.gitService,
 					files:            m.files,

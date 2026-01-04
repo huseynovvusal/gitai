@@ -19,9 +19,8 @@ var suggestCmd = &cobra.Command{
 	Use:   "suggest [files...]",
 	Short: "Suggest commit messages for changed files using AI",
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		ctx := context.Background()
-		gitService := git.NewGitService()
-		files, err := gitService.GetChangedFiles(ctx)
+		gitService := git.NewService()
+		files, err := gitService.GetChangedFiles()
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
@@ -36,7 +35,7 @@ var suggestCmd = &cobra.Command{
 			return files, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		return getFilteredSuggestions(ctx, toComplete, args, files, repoRoot, cwd, gitService), cobra.ShellCompDirectiveNoFileComp
+		return getFilteredSuggestions(toComplete, args, files, repoRoot, cwd, gitService), cobra.ShellCompDirectiveNoFileComp
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		rootCtx, cancel := context.WithCancel(context.Background())
@@ -67,7 +66,7 @@ var suggestCmd = &cobra.Command{
 
 		service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint)
 
-		gitService := git.NewGitService()
+		gitService := git.NewService()
 
 		flowConfig := suggest.FlowConfig{
 			EditorMode:       cfg.Suggest.Editor,
@@ -102,13 +101,13 @@ func init() {
 }
 
 type gitService interface {
-	ResolvePath(ctx context.Context, path string) ([]string, error)
+	ResolvePath(path string) ([]string, error)
 }
 
-func getFilteredSuggestions(ctx context.Context, toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string, gs gitService) []string {
+func getFilteredSuggestions(toComplete string, selectedArgs []string, changedFiles []string, repoRoot, cwd string, gs gitService) []string {
 	selectedSet := make(map[string]bool)
 	for _, arg := range selectedArgs {
-		if resolved, err := gs.ResolvePath(ctx, arg); err == nil {
+		if resolved, err := gs.ResolvePath(arg); err == nil {
 			for _, r := range resolved {
 				selectedSet[r] = true
 			}

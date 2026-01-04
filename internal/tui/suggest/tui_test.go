@@ -15,9 +15,11 @@ type mockGenerator struct {
 	err      error
 }
 
-func (m *mockGenerator) Generate(ctx context.Context, diff, status, hint string) (string, error) {
+func (m *mockGenerator) Generate(ctx context.Context, _, _, _ string) (string, error) {
 	return m.response, m.err
 }
+
+var _ suggestGitService = (*mockGitService)(nil)
 
 type mockGitService struct {
 	statusResponse  string
@@ -29,21 +31,25 @@ type mockGitService struct {
 	prURL           string
 }
 
-func (m *mockGitService) GetStatusForFiles(ctx context.Context, files []string) (string, error) {
+func (m *mockGitService) GetStatusForFiles(_ []string) (string, error) {
 	return m.statusResponse, nil
 }
-func (m *mockGitService) GetChangedFiles(ctx context.Context) ([]string, error) { return m.changedFiles, nil }
-func (m *mockGitService) GetChangesForFiles(ctx context.Context, files []string) (string, error) {
+func (m *mockGitService) GetChangedFiles() ([]string, error) {
+	return m.changedFiles, nil
+}
+func (m *mockGitService) GetChangesForFiles(_ []string) (string, error) {
 	return m.changesResponse, nil
 }
-func (m *mockGitService) Commit(ctx context.Context, files []string, message string) error { return m.commitErr }
-func (m *mockGitService) Push(ctx context.Context, remoteName string) (string, error) {
+func (m *mockGitService) Commit(_ []string, _ string) error {
+	return m.commitErr
+}
+func (m *mockGitService) Push(_ context.Context, _ string) (string, error) {
 	return m.pushResponse, nil
 }
-func (m *mockGitService) ResolvePath(ctx context.Context, path string) ([]string, error) {
+func (m *mockGitService) ResolvePath(_ string) ([]string, error) {
 	return m.resolveResponse, nil
 }
-func (m *mockGitService) GetPullRequestURL(ctx context.Context, remoteName string) (string, error) {
+func (m *mockGitService) GetPullRequestURL(_ string) (string, error) {
 	return m.prURL, nil
 }
 
@@ -261,7 +267,7 @@ func TestAIMessageModel_Editing(t *testing.T) {
 		t.Error("expected StateEditing")
 	}
 
-	// 2. Type new message in textarea
+	// 2. Type a new message in the textarea
 	m.textArea.SetValue("new message")
 
 	// 3. Save (Ctrl+S)
@@ -283,21 +289,19 @@ func TestFlow_Options(t *testing.T) {
 }
 
 func TestFlow_PrintPullRequestInfo(t *testing.T) {
-	ctx := context.Background()
 	gs := &mockGitService{prURL: "https://github.com/pr/1"}
 	f := NewFlow(nil, gs, FlowConfig{
 		EditorMode: "builtin",
 	})
 
 	// Capturing stdout is complex, but we can at least call it to ensure no panics
-	f.printPullRequestInfo(ctx, "remote: https://github.com/pr/2")
+	f.printPullRequestInfo("remote: https://github.com/pr/2")
 
 	gs.prURL = ""
-	f.printPullRequestInfo(ctx, "remote: https://github.com/pr/2")
+	f.printPullRequestInfo("remote: https://github.com/pr/2")
 }
 
 func TestFilterCompatibleFiles(t *testing.T) {
-	ctx := context.Background()
 	gs := &mockGitService{
 		resolveResponse: []string{"a.go"},
 	}
@@ -306,16 +310,16 @@ func TestFilterCompatibleFiles(t *testing.T) {
 	})
 
 	available := []string{"a.go", "b.go"}
-	
+
 	// Exact match (tracked file)
-	res := f.FilterCompatibleFiles(ctx, available, []string{"a.go"})
+	res := f.FilterCompatibleFiles(available, []string{"a.go"})
 	if len(res) != 1 || res[0] != "a.go" {
 		t.Errorf("expected [a.go], got %v", res)
 	}
 
 	// Non-existent
 	gs.resolveResponse = nil
-	res = f.FilterCompatibleFiles(ctx, available, []string{"nonexistent.go"})
+	res = f.FilterCompatibleFiles(available, []string{"nonexistent.go"})
 	if len(res) != 0 {
 		t.Errorf("expected empty, got %v", res)
 	}
