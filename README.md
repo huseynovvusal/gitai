@@ -194,16 +194,7 @@ This project uses [GoReleaser](https://goreleaser.com/) and GitHub Actions for r
 
 ## 🤝 Contributing
 
-Contributions are welcome. Please follow the guidelines in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Suggested contribution workflow:
-
-1. Fork the repo and create a topic branch
-2. Implement your feature or fix
-3. Add/adjust tests where appropriate
-4. Open a pull request describing the change and rationale
-
-If you'd like help designing an enhancement (hooks, CI integrations, new backends), open an issue first to discuss.
+Contributions are welcome! Please see our [Contributing Guide](https://github.com/artback/gitai/wiki/Contributing) for details.
 
 ## 🔒 Security & Privacy
 
