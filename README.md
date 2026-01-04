@@ -1,5 +1,7 @@
 # 🤖 **Gitai** — AI-powered Git Assistant
 
+[![codecov](https://codecov.io/gh/artback/gitai/branch/main/graph/badge.svg)](https://codecov.io/gh/artback/gitai)
+
 Gitai is an AI-powered CLI tool that helps you write better git commit messages, faster. It analyzes your changes (diffs) to generate concise, standardized commits that follow best practices.
 
 It supports two main workflows:

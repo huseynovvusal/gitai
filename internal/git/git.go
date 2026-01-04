@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -203,9 +204,6 @@ func (s *GitService) ResolvePath(ctx context.Context, path string) ([]string, er
 		return nil, err
 	}
 	rel, err := filepath.Rel(root, abs)
-	if err != nil {
-		return nil, err
-	}
 
 	info, err := os.Stat(abs)
 	if err != nil || !info.IsDir() {
@@ -423,8 +421,11 @@ func formatStatusCode(c git.StatusCode) rune {
 // prevent context bleeding between files and align with the model's training data.
 func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
-	diffs := dmp.DiffMain(old, new, false)
-	dmp.DiffCleanupSemantic(diffs)
+	patches := dmp.PatchMake(old, new)
+	patchText := dmp.PatchToText(patches)
+
+	// Normalize the text to avoid URL encoding
+	decoded, _ := url.PathUnescape(patchText)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
@@ -435,26 +436,7 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	} else {
 		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
-
-	for _, d := range diffs {
-		lines := strings.Split(d.Text, "\n")
-		prefix := " "
-		switch d.Type {
-		case diffmatchpatch.DiffInsert:
-			prefix = "+"
-		case diffmatchpatch.DiffDelete:
-			prefix = "-"
-		}
-
-		for i, line := range lines {
-			if i == len(lines)-1 && line == "" {
-				continue
-			}
-			sb.WriteString(prefix)
-			sb.WriteString(line)
-			sb.WriteString("\n")
-		}
-	}
+	sb.WriteString(decoded)
 
 	return sb.String()
 }
