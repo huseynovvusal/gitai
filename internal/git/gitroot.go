@@ -1,22 +1,34 @@
 package git
 
 import (
-	"strings"
+	"errors"
+	"path/filepath"
+
+	"github.com/go-git/go-git/v5"
 )
 
+// GetGitRoot returns the absolute path to the repository root.
 func GetGitRoot() (string, error) {
-	// Executes: git rev-parse --show-toplevel
-	// This command outputs the absolute path to the repository root.
-	cmd := command("git", "rev-parse", "--show-toplevel")
+	return findGitRoot(".")
+}
 
-	// Capture the output
-	output, err := cmd.Output()
+// findGitRoot traverses up from the startPath to find the git repository root.
+func findGitRoot(startPath string) (string, error) {
+	path, err := filepath.Abs(startPath)
 	if err != nil {
-		// Return nil error if the 'git' command isn't found or if not in a git repo
-		// This allows the app to proceed to use other config paths.
 		return "", err
 	}
 
-	// Trim whitespace and newlines from the command output
-	return strings.TrimSpace(string(output)), nil
+	for {
+		_, err := git.PlainOpen(path)
+		if err == nil {
+			return path, nil
+		}
+
+		parent := filepath.Dir(path)
+		if parent == path {
+			return "", errors.New("not a git repository")
+		}
+		path = parent
+	}
 }

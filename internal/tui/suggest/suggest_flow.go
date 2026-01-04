@@ -144,7 +144,7 @@ func (s *Flow) runHintInput() (string, error) {
 // printPullRequestInfo handles the output parsing for PR links
 func printPullRequestInfo(pushOutput string) {
 	// Preferred: Git config
-	prURL, err := git.GetPullRequestURL()
+	prURL, err := git.GetPullRequestURL("origin")
 	if err == nil && prURL != "" {
 		fmt.Printf("\nCreate a Pull Request: %s\n", prURL)
 		return

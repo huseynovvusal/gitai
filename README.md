@@ -19,16 +19,16 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 - **Edit & Regenerate**: Tweak suggestions in-place or regenerate them with a keystroke 🔄
 - **Security scanning**: Automatically detects sensitive data (keys, passwords) in diffs before sending to AI 🔒
 - **Smart ticket extraction**: Automatically parses Jira and GitHub issue URLs from hints to format commit headers 🎫
-- **Conventional Commits**: Generates messages following the Conventional Commits specification by default 📝
+- Conventional Commits: Generates messages following the Conventional Commits specification by default 📝
 - Pluggable AI backends: OpenAI, Google GenAI, Ollama (local)
-- Small single-binary distribution (Go) ⚙️
+- **Zero external dependencies**: Built in pure Go (no `git` binary required) ⚙️
 
 ## ⚡️ Quick start
 
 ### 🛠️ Prerequisites
 
 - Go 1.20+ (Go modules are used; CONTRIBUTING recommends Go 1.24+ for development)
-t - One of the supported AI providers (optional):
+- One of the supported AI providers (optional):
   - OpenAI API key (`OPENAI_API_KEY`)
   - Google Gemini API key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
   - Ollama binary available and `OLLAMA_API_PATH` set (for local models)
