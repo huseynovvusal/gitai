@@ -3,7 +3,6 @@ package git
 import (
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/ssh/agent"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,14 +16,72 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
-// --- Core Helpers ---
+// resolveAuth automatically finds keys from the Agent OR any private key file in ~/.ssh
+func resolveAuth(url string) (transport.AuthMethod, error) {
+	if strings.HasPrefix(url, "http") {
+		return nil, nil
+	}
 
-func getRepoAndWorktree() (*git.Repository, *git.Worktree, string, error) {
-	root, err := GetGitRoot()
+	// Extract user (default "git")
+	user := "git"
+	if parts := strings.Split(url, "@"); len(parts) > 1 {
+		user = strings.Split(parts[0], "://")[0]
+	}
+
+	// Define the callback logic separately
+	keyCallback := func() (signers []ssh.Signer, err error) {
+		// A. Try SSH Agent
+		if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+			if conn, err := net.Dial("unix", sock); err == nil {
+				if s, err := agent.NewClient(conn).Signers(); err == nil {
+					signers = append(signers, s...)
+				}
+			}
+		}
+
+		// B. Try all files in ~/.ssh (Simpler than guessing names)
+		home, _ := os.UserHomeDir()
+		files, _ := os.ReadDir(filepath.Join(home, ".ssh"))
+		for _, f := range files {
+			// Skip public keys and known config files
+			if f.IsDir() || strings.HasSuffix(f.Name(), ".pub") ||
+				strings.HasPrefix(f.Name(), "known_") || strings.HasPrefix(f.Name(), "config") {
+				continue
+			}
+
+			// Try to parse as private key (ignores non-keys automatically)
+			if key, err := os.ReadFile(filepath.Join(home, ".ssh", f.Name())); err == nil {
+				if signer, err := ssh.ParsePrivateKey(key); err == nil {
+					signers = append(signers, signer)
+				}
+			}
+		}
+
+		if len(signers) == 0 {
+			return nil, errors.New("no ssh keys found in agent or ~/.ssh")
+		}
+		return signers, nil
+	}
+
+	auth := &gitssh.PublicKeysCallback{
+		User:     user,
+		Callback: keyCallback,
+	}
+
+	auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+
+	return auth, nil
+}
+
+// --- 2. Core Logic ---
+
+func getRepo() (*git.Repository, *git.Worktree, string, error) {
+	root, err := GetGitRoot() // Assumes external existence
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -33,143 +90,76 @@ func getRepoAndWorktree() (*git.Repository, *git.Worktree, string, error) {
 		return nil, nil, "", err
 	}
 	w, err := r.Worktree()
-	if err != nil {
-		return nil, nil, "", err
-	}
-	return r, w, root, nil
+	return r, w, root, err
 }
 
-func toRelativePath(path string) (string, error) {
+func toRel(path string) (string, error) {
 	root, err := GetGitRoot()
 	if err != nil {
 		return "", err
 	}
+
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
 	}
+
 	rel, err := filepath.Rel(root, abs)
 	if err != nil {
 		return "", err
 	}
+
 	if strings.HasPrefix(rel, "..") {
 		return "", ErrOutsideRepo
 	}
 	return rel, nil
 }
 
-// --- Public API ---
-
-func GetStatusForFiles(files []string) (string, error) {
-	if len(files) == 0 {
-		return "", nil
-	}
-	_, w, _, err := getRepoAndWorktree()
+// Push pushes the current branch to origin using the smart auth.
+func Push() (string, error) {
+	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
 	}
 
-	status, err := w.Status()
+	remote, err := r.Remote("origin")
 	if err != nil {
-		return "", fmt.Errorf("git status failed: %w", err)
+		return "", fmt.Errorf("remote 'origin' not found")
 	}
 
-	var sb strings.Builder
-	for _, file := range files {
-		relPath, err := toRelativePath(file)
-		if err != nil {
-			continue
-		}
-		if s, ok := status[relPath]; ok {
-			sb.WriteString(fmt.Sprintf("%c%c %s\n", formatStatusCode(s.Staging), formatStatusCode(s.Worktree), relPath))
-		}
-	}
-	return sb.String(), nil
-}
-
-func GetChangedFiles() ([]string, error) {
-	_, w, _, err := getRepoAndWorktree()
-	if err != nil {
-		return nil, err
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", errors.New("origin has no URLs")
 	}
 
-	status, err := w.Status()
-	if err != nil {
-		return nil, err
-	}
-
-	var changed []string
-	for path, s := range status {
-		if s.Staging != git.Unmodified || s.Worktree != git.Unmodified {
-			changed = append(changed, path)
-		}
-	}
-	sort.Strings(changed)
-	return changed, nil
-}
-
-func GetChangesForFiles(files []string) (string, error) {
-	if len(files) == 0 {
-		return "", nil
-	}
-	r, _, _, err := getRepoAndWorktree()
+	auth, err := resolveAuth(urls[0])
 	if err != nil {
 		return "", err
 	}
 
-	var headTree *object.Tree
-	if head, err := r.Head(); err == nil {
-		if commit, err := r.CommitObject(head.Hash()); err == nil {
-			headTree, _ = commit.Tree()
+	err = r.Push(&git.PushOptions{Auth: auth})
+	if err != nil {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+			return "Already up-to-date", nil
 		}
+		return "", err
 	}
-
-	var sb strings.Builder
-	for _, file := range files {
-		relPath, err := toRelativePath(file)
-		if err != nil {
-			continue
-		}
-
-		oldContent := ""
-		isNewFile := true
-		if headTree != nil {
-			if f, err := headTree.File(relPath); err == nil {
-				if content, err := f.Contents(); err == nil {
-					oldContent = content
-					isNewFile = false
-				}
-			}
-		}
-
-		newContentBytes, err := os.ReadFile(file)
-		newContent := string(newContentBytes)
-		isDeleted := err != nil
-
-		if isNewFile && isDeleted {
-			continue
-		}
-		sb.WriteString(generateDiffString(relPath, oldContent, newContent, isNewFile, isDeleted))
-	}
-	return sb.String(), nil
+	return "Push successful", nil
 }
 
 func Commit(files []string, message string) error {
-	if len(files) == 0 {
-		return errors.New("no files to commit")
-	}
-	r, w, _, err := getRepoAndWorktree()
+	r, w, _, err := getRepo()
 	if err != nil {
 		return err
 	}
 
-	for _, file := range files {
-		relPath, err := toRelativePath(file)
+	for _, f := range files {
+		rel, err := toRel(f)
 		if err != nil {
 			return err
 		}
-		if _, err := w.Add(relPath); err != nil {
-			return fmt.Errorf("failed to add %s: %w", file, err)
+		if _, err := w.Add(rel); err != nil {
+			return err
 		}
 	}
 
@@ -191,58 +181,34 @@ func Commit(files []string, message string) error {
 	return err
 }
 
-func Push() (string, error) {
-	r, _, _, err := getRepoAndWorktree()
+// --- 3. Status & Diffing ---
+
+func GetStatusForFiles(files []string) (string, error) {
+	_, w, _, err := getRepo()
 	if err != nil {
 		return "", err
 	}
 
-	remote, err := r.Remote("origin")
+	status, err := w.Status()
 	if err != nil {
-		return "", fmt.Errorf("remote 'origin' not found")
+		return "", err
 	}
 
-	urls := remote.Config().URLs
-	if len(urls) == 0 {
-		return "", errors.New("origin has no URLs")
-	}
-
-	// Smart Auth Resolution
-	auth, err := resolveAuth(urls[0])
-	if err != nil {
-		// If we couldn't resolve SSH auth, abort early
-		return "", fmt.Errorf("ssh auth failed: %w", err)
-	}
-
-	err = r.Push(&git.PushOptions{Auth: auth})
-	if err != nil {
-		if errors.Is(err, git.NoErrAlreadyUpToDate) {
-			return "Already up-to-date", nil
+	var sb strings.Builder
+	for _, f := range files {
+		if rel, err := toRel(f); err == nil {
+			if s, ok := status[rel]; ok {
+				sb.WriteString(fmt.Sprintf("%c%c %s\n", statusCode(s.Staging), statusCode(s.Worktree), rel))
+			}
 		}
-		return "", err
 	}
-	return "Push successful", nil
+	return sb.String(), nil
 }
 
-func ResolvePath(path string) ([]string, error) {
-	r, w, root, err := getRepoAndWorktree()
+func GetChangedFiles() ([]string, error) {
+	_, w, _, err := getRepo()
 	if err != nil {
 		return nil, err
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
-
-	relToRoot, err := filepath.Rel(root, absPath)
-	if err != nil || strings.HasPrefix(relToRoot, "..") {
-		return nil, ErrOutsideRepo
-	}
-
-	info, err := os.Stat(absPath)
-	if err != nil || !info.IsDir() {
-		return []string{relToRoot}, nil
 	}
 
 	status, err := w.Status()
@@ -250,203 +216,127 @@ func ResolvePath(path string) ([]string, error) {
 		return nil, err
 	}
 
-	prefix := relToRoot
-	if prefix == "." {
-		prefix = ""
-	} else if !strings.HasSuffix(prefix, string(filepath.Separator)) {
-		prefix += string(filepath.Separator)
+	var changed []string
+	for path, s := range status {
+		if s.Staging != git.Unmodified || s.Worktree != git.Unmodified {
+			changed = append(changed, path)
+		}
+	}
+	sort.Strings(changed)
+	return changed, nil
+}
+
+func GetChangesForFiles(files []string) (string, error) {
+	r, _, _, err := getRepo()
+	if err != nil {
+		return "", err
 	}
 
-	var results []string
-	seen := make(map[string]bool)
+	headTree, _ := getHeadTree(r)
+	var sb strings.Builder
 
-	// Add from Status
-	for p := range status {
-		if strings.HasPrefix(p, prefix) {
+	for _, file := range files {
+		rel, err := toRel(file)
+		if err != nil {
+			continue
+		}
+
+		oldText, isNew := "", true
+		if headTree != nil {
+			if f, err := headTree.File(rel); err == nil {
+				if c, err := f.Contents(); err == nil {
+					oldText, isNew = c, false
+				}
+			}
+		}
+
+		newBytes, err := os.ReadFile(file)
+		newText := string(newBytes)
+		isDeleted := err != nil
+
+		if isNew && isDeleted {
+			continue
+		}
+		sb.WriteString(diffString(rel, oldText, newText, isNew, isDeleted))
+	}
+	return sb.String(), nil
+}
+
+func ResolvePath(path string) ([]string, error) {
+	r, w, root, err := getRepo()
+	if err != nil {
+		return nil, err
+	}
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(root, abs)
+
+	info, err := os.Stat(abs)
+	if err != nil || !info.IsDir() {
+		// Return single file (even if deleted/missing)
+		if strings.HasPrefix(rel, "..") {
+			return nil, ErrOutsideRepo
+		}
+		return []string{rel}, nil
+	}
+
+	// It's a directory: find all tracked files inside
+	status, _ := w.Status()
+	headTree, _ := getHeadTree(r)
+
+	// Normalize path prefix
+	prefix := rel
+	if prefix == "." {
+		prefix = ""
+	}
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	seen := make(map[string]bool)
+	var results []string
+
+	// Helper to add if matches prefix
+	add := func(p string) {
+		if (prefix == "" || strings.HasPrefix(p, prefix)) && !seen[p] {
 			results = append(results, p)
 			seen[p] = true
 		}
 	}
 
-	// Add from HEAD (catch unmodified files)
-	if head, err := r.Head(); err == nil {
-		if commit, err := r.CommitObject(head.Hash()); err == nil {
-			if tree, err := commit.Tree(); err == nil {
-				_ = tree.Files().ForEach(func(f *object.File) error {
-					if strings.HasPrefix(f.Name, prefix) && !seen[f.Name] {
-						results = append(results, f.Name)
-					}
-					return nil
-				})
-			}
-		}
+	for p := range status {
+		add(p)
 	}
+
+	if headTree != nil {
+		_ = headTree.Files().ForEach(func(f *object.File) error {
+			add(f.Name)
+			return nil
+		})
+	}
+
 	sort.Strings(results)
 	return results, nil
 }
 
-func GetPullRequestURL() (string, error) {
-	branch, err := GetCurrentBranch()
-	if err != nil {
-		return "", err
-	}
+// --- 4. Utilities ---
 
-	remoteURL, err := GetRemoteURL("origin")
-	if err != nil {
-		return "", err
-	}
-
-	repoURL := normalizeGitURL(remoteURL)
-
-	switch {
-	case strings.Contains(repoURL, "github.com"):
-		return fmt.Sprintf("%s/pull/new/%s", repoURL, branch), nil
-	case strings.Contains(repoURL, "gitlab.com"):
-		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", repoURL, branch), nil
-	case strings.Contains(repoURL, "bitbucket.org"):
-		return fmt.Sprintf("%s/pull-requests/new?source=%s", repoURL, branch), nil
-	default:
-		return "", fmt.Errorf("unknown remote host in URL: %s", repoURL)
-	}
-}
-
-func GetRemoteURL(remoteName string) (string, error) {
-	r, _, _, err := getRepoAndWorktree()
-	if err != nil {
-		return "", err
-	}
-	rem, err := r.Remote(remoteName)
-	if err != nil {
-		return "", fmt.Errorf("remote %s not found: %w", remoteName, err)
-	}
-	cfg := rem.Config()
-	if len(cfg.URLs) == 0 {
-		return "", fmt.Errorf("no URL found for remote %s", remoteName)
-	}
-	return cfg.URLs[0], nil
-}
-
-func GetCurrentBranch() (string, error) {
-	r, _, _, err := getRepoAndWorktree()
-	if err != nil {
-		return "", err
-	}
+func getHeadTree(r *git.Repository) (*object.Tree, error) {
 	head, err := r.Head()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if head.Name().IsBranch() {
-		return head.Name().Short(), nil
+	c, err := r.CommitObject(head.Hash())
+	if err != nil {
+		return nil, err
 	}
-	return head.Hash().String(), nil
+	return c.Tree()
 }
 
-// --- Utilities ---
-
-// resolveAuth intelligently finds the best authentication method by scanning ALL keys.
-func resolveAuth(url string) (transport.AuthMethod, error) {
-	if strings.HasPrefix(url, "http") {
-		return nil, nil
-	}
-
-	user := "git"
-	if parts := strings.Split(url, "@"); len(parts) > 1 {
-		// Handle git@github.com -> user: git
-		user = strings.Split(parts[0], "://")[len(strings.Split(parts[0], "://"))-1]
-	}
-
-	// Define the logic to find keys
-	callback := func() ([]ssh.Signer, error) {
-		var signers []ssh.Signer
-		seenKeys := make(map[string]bool)
-
-		// 1. Try System SSH Agent (Priority #1)
-		if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-			if conn, err := net.Dial("unix", sock); err == nil {
-				ag := agent.NewClient(conn)
-				if agentSigners, err := ag.Signers(); err == nil {
-					for _, s := range agentSigners {
-						signers = append(signers, s)
-						seenKeys[ssh.FingerprintSHA256(s.PublicKey())] = true
-					}
-				}
-			}
-		}
-
-		// 2. Scan ~/.ssh for ALL private keys (Priority #2)
-		home, _ := os.UserHomeDir()
-		sshDir := filepath.Join(home, ".ssh")
-		files, _ := os.ReadDir(sshDir)
-
-		for _, f := range files {
-			// Skip public keys, directories, and known_hosts
-			if f.IsDir() || strings.HasSuffix(f.Name(), ".pub") ||
-				strings.HasPrefix(f.Name(), "known_hosts") ||
-				strings.HasPrefix(f.Name(), "config") ||
-				strings.HasPrefix(f.Name(), "authorized_keys") {
-				continue
-			}
-
-			// Try to read file
-			path := filepath.Join(sshDir, f.Name())
-			keyData, err := os.ReadFile(path)
-			if err != nil {
-				continue
-			}
-
-			// Check if it's a valid private key
-			signer, err := ssh.ParsePrivateKey(keyData)
-			if err != nil {
-				continue
-			}
-
-			// Deduplicate
-			fp := ssh.FingerprintSHA256(signer.PublicKey())
-			if !seenKeys[fp] {
-				signers = append(signers, signer)
-				seenKeys[fp] = true
-			}
-		}
-
-		if len(signers) == 0 {
-			return nil, errors.New("no valid ssh keys (agent or disk) found")
-		}
-
-		return signers, nil
-	}
-
-	// Construct the AuthMethod
-	auth := &gitssh.PublicKeysCallback{
-		User:     user,
-		Callback: callback,
-	}
-
-	// FIX: Assign this field separately to avoid "not a member" compilation errors
-	// due to how Go handles embedded struct literals.
-	auth.HostKeyCallback = ssh.InsecureIgnoreHostKey()
-
-	return auth, nil
-}
-
-func normalizeGitURL(url string) string {
-	url = strings.TrimSpace(url)
-	url = strings.TrimSuffix(url, ".git")
-	if strings.HasPrefix(url, "git@") {
-		url = strings.TrimPrefix(url, "git@")
-		url = strings.Replace(url, ":", "/", 1)
-	} else if strings.HasPrefix(url, "ssh://") {
-		url = strings.TrimPrefix(url, "ssh://")
-		if i := strings.Index(url, "@"); i != -1 {
-			url = url[i+1:]
-		}
-	}
-	if !strings.HasPrefix(url, "http") {
-		url = "https://" + url
-	}
-	return url
-}
-
-func formatStatusCode(c git.StatusCode) rune {
+func statusCode(c git.StatusCode) rune {
 	switch c {
 	case git.Unmodified:
 		return ' '
@@ -458,8 +348,6 @@ func formatStatusCode(c git.StatusCode) rune {
 		return 'D'
 	case git.Renamed:
 		return 'R'
-	case git.Copied:
-		return 'C'
 	case git.Untracked:
 		return '?'
 	default:
@@ -467,23 +355,61 @@ func formatStatusCode(c git.StatusCode) rune {
 	}
 }
 
-func generateDiffString(path, oldText, newText string, isNew, isDeleted bool) string {
+func diffString(path, old, new string, isNew, isDel bool) string {
 	dmp := diffmatchpatch.New()
-	diffs := dmp.DiffMain(oldText, newText, false)
-	patches := dmp.PatchMake(oldText, diffs)
-	diffBody := dmp.PatchToText(patches)
+	diffs := dmp.DiffMain(old, new, false)
+	patches := dmp.PatchMake(old, diffs)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
 	if isNew {
-		sb.WriteString("new file mode 100644\n--- /dev/null\n")
-		sb.WriteString(fmt.Sprintf("+++ b/%s\n", path))
-	} else if isDeleted {
-		sb.WriteString("deleted file mode 100644\n")
-		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ /dev/null\n", path))
+		sb.WriteString(fmt.Sprintf("new file mode 100644\n--- /dev/null\n+++ b/%s\n", path))
+	} else if isDel {
+		sb.WriteString(fmt.Sprintf("deleted file mode 100644\n--- a/%s\n+++ /dev/null\n", path))
 	} else {
 		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
-	sb.WriteString(diffBody)
+	sb.WriteString(dmp.PatchToText(patches))
 	return sb.String()
+}
+
+func GetPullRequestURL() (string, error) {
+	r, _, _, err := getRepo()
+	if err != nil {
+		return "", err
+	}
+
+	head, err := r.Head()
+	if err != nil {
+		return "", err
+	}
+	branch := head.Name().Short()
+	if !head.Name().IsBranch() {
+		branch = head.Hash().String()
+	}
+
+	rem, err := r.Remote("origin")
+	if err != nil || len(rem.Config().URLs) == 0 {
+		return "", errors.New("no remote origin")
+	}
+
+	url := rem.Config().URLs[0]
+	// Normalize URL
+	url = strings.TrimSuffix(strings.TrimSpace(url), ".git")
+	if strings.HasPrefix(url, "git@") {
+		url = "https://" + strings.Replace(strings.TrimPrefix(url, "git@"), ":", "/", 1)
+	} else if strings.HasPrefix(url, "ssh://") {
+		url = "https://" + strings.TrimPrefix(strings.Split(url, "@")[1], ":")
+	}
+
+	switch {
+	case strings.Contains(url, "github.com"):
+		return fmt.Sprintf("%s/pull/new/%s", url, branch), nil
+	case strings.Contains(url, "gitlab.com"):
+		return fmt.Sprintf("%s/-/merge_requests/new?merge_request[source_branch]=%s", url, branch), nil
+	case strings.Contains(url, "bitbucket.org"):
+		return fmt.Sprintf("%s/pull-requests/new?source=%s", url, branch), nil
+	default:
+		return "", fmt.Errorf("unknown host: %s", url)
+	}
 }
