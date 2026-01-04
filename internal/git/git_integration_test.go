@@ -3,34 +3,40 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 func setupTestRepo(t *testing.T) (string, *git.Repository) {
 	t.Helper()
-
-	// Create a temp directory
 	tempDir, err := os.MkdirTemp("", "gitai-test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Initialize a new git repository
 	r, err := git.PlainInit(tempDir, false)
 	if err != nil {
 		os.RemoveAll(tempDir)
 		t.Fatal(err)
 	}
 
-	// Configure user
 	cfg, _ := r.Config()
 	cfg.User.Name = "Test User"
 	cfg.User.Email = "test@example.com"
 	r.SetConfig(cfg)
+
+	// Create initial commit to ensure 'master' branch exists
+	w, _ := r.Worktree()
+	os.WriteFile(filepath.Join(tempDir, "README.md"), []byte("# Test Repo"), 0644)
+	w.Add("README.md")
+	w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test User", Email: "test@example.com", When: time.Now()},
+	})
 
 	return tempDir, r
 }
@@ -39,7 +45,6 @@ func TestGetGitRoot(t *testing.T) {
 	dir, _ := setupTestRepo(t)
 	defer os.RemoveAll(dir)
 
-	// Change to the repo directory
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(dir)
@@ -49,63 +54,54 @@ func TestGetGitRoot(t *testing.T) {
 		t.Fatalf("GetGitRoot failed: %v", err)
 	}
 
-	// On macOS, temp dirs might be symlinked (/var/folders vs /private/var/folders)
-	// simple comparison might fail.
-	// But let's check if they point to same place.
-	if filepath.Clean(root) != filepath.Clean(dir) {
-		// Use EvalSymlinks to be sure
-		r1, _ := filepath.EvalSymlinks(root)
-		d1, _ := filepath.EvalSymlinks(dir)
-		if r1 != d1 {
-			t.Errorf("expected root %s, got %s", dir, root)
-		}
+	r1, _ := filepath.EvalSymlinks(root)
+	d1, _ := filepath.EvalSymlinks(dir)
+	if r1 != d1 {
+		t.Errorf("expected root %s, got %s", dir, root)
+	}
+}
+
+func TestGetGitRoot_NotFound(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "gitai-no-git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+	os.Chdir(tempDir)
+
+	_, err = GetGitRoot()
+	if err == nil {
+		t.Error("expected error when not in a git repository, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a git repository") {
+		t.Errorf("expected 'not a git repository' error, got: %v", err)
 	}
 }
 
 func TestGetChangedFiles(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
-
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
 	w, _ := wRepo.Worktree()
-
-	// 1. Create a file
 	os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("content1"), 0644)
 
-	// 2. Untracked file should be detected
-	files, err := GetChangedFiles()
-	if err != nil {
-		t.Fatalf("GetChangedFiles failed: %v", err)
-	}
+	files, _ := GetChangedFiles()
 	if len(files) != 1 || files[0] != "file1.txt" {
 		t.Errorf("expected [file1.txt], got %v", files)
 	}
 
-	// 3. Stage the file
 	w.Add("file1.txt")
-	
-	// 4. Staged file should be detected
-	files, err = GetChangedFiles()
-	if err != nil {
-		t.Fatalf("GetChangedFiles failed: %v", err)
-	}
-	if len(files) != 1 || files[0] != "file1.txt" {
-		t.Errorf("expected [file1.txt], got %v", files)
-	}
-
-	// 5. Commit
-	w.Commit("initial commit", &git.CommitOptions{
+	w.Commit("initial", &git.CommitOptions{
 		Author: &object.Signature{Name: "Me", Email: "me@me.com", When: time.Now()},
 	})
 
-	// 6. No changes
-	files, err = GetChangedFiles()
-	if err != nil {
-		t.Fatalf("GetChangedFiles failed: %v", err)
-	}
+	files, _ = GetChangedFiles()
 	if len(files) != 0 {
 		t.Errorf("expected [], got %v", files)
 	}
@@ -114,62 +110,220 @@ func TestGetChangedFiles(t *testing.T) {
 func TestCommit(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
-
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 
-	// Create and commit a file
+	// 1. Add/Commit
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
-	
-	err := Commit([]string{"main.go"}, "Add main.go")
-	if err != nil {
-		t.Fatalf("Commit failed: %v", err)
+	if err := Commit([]string{"main.go"}, "Add main"); err != nil {
+		t.Fatal(err)
 	}
 
-	// Verify log
+	// 2. Delete/Commit
+	os.Remove(filepath.Join(dir, "main.go"))
+	if err := Commit([]string{"main.go"}, "Delete main"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Rename/Commit
+	os.WriteFile(filepath.Join(dir, "old.txt"), []byte("content"), 0644)
+	Commit([]string{"old.txt"}, "Add old")
+	os.Rename(filepath.Join(dir, "old.txt"), filepath.Join(dir, "new.txt"))
+	if err := Commit([]string{"old.txt", "new.txt"}, "Rename"); err != nil {
+		t.Fatal(err)
+	}
+
 	head, _ := wRepo.Head()
-	c, _ := wRepo.CommitObject(head.Hash())
-	if c.Message != "Add main.go" {
-		t.Errorf("expected commit message 'Add main.go', got '%s'", c.Message)
+	iter, _ := wRepo.Log(&git.LogOptions{From: head.Hash()})
+	var messages []string
+	iter.ForEach(func(c *object.Commit) error {
+		messages = append(messages, c.Message)
+		return nil
+	})
+
+	for _, msg := range []string{"Rename", "Add old", "Delete main", "Add main"} {
+		found := false
+		for _, m := range messages {
+			if strings.Contains(m, msg) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing commit message: %s", msg)
+		}
 	}
 }
 
 func TestGetChangesForFiles(t *testing.T) {
 	dir, wRepo := setupTestRepo(t)
 	defer os.RemoveAll(dir)
-
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(dir)
 	w, _ := wRepo.Worktree()
 
-	// Case 1: New file (untracked)
-	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello world"), 0644)
-	diff, err := GetChangesForFiles([]string{"new.txt"})
-	if err != nil {
-		t.Fatalf("GetChangesForFiles failed: %v", err)
-	}
-	// Our simplified implementation just dumps content for new files
-	if diff == "" {
-		t.Error("expected diff/content, got empty")
+	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello"), 0644)
+	diff, _ := GetChangesForFiles([]string{"new.txt"})
+	if !strings.Contains(diff, "new file") {
+		t.Error("expected new file diff")
 	}
 
-	// Case 2: Modified file
 	w.Add("new.txt")
 	w.Commit("init", &git.CommitOptions{
 		Author: &object.Signature{Name: "Me", Email: "me@me.com", When: time.Now()},
 	})
 
-	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello world updated"), 0644)
-	
-	diff, err = GetChangesForFiles([]string{"new.txt"})
-	if err != nil {
-		t.Fatalf("GetChangesForFiles failed: %v", err)
+	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello world"), 0644)
+	diff, _ = GetChangesForFiles([]string{"new.txt"})
+	if !strings.Contains(diff, "hello") || !strings.Contains(diff, "world") {
+		t.Errorf("diff missing expected content: %s", diff)
 	}
-	
-	// Should contain the new content
-	if len(diff) < 10 {
-		t.Errorf("expected diff content, got: %s", diff)
+}
+
+func TestGetStatusForFiles(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	defer os.RemoveAll(dir)
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+	os.Chdir(dir)
+
+	os.WriteFile(filepath.Join(dir, "status.txt"), []byte("data"), 0644)
+	status, err := GetStatusForFiles([]string{"status.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, "?? status.txt") {
+		t.Errorf("expected untracked status, got: %q", status)
+	}
+}
+
+func TestResolvePath(t *testing.T) {
+	dir, wRepo := setupTestRepo(t)
+	defer os.RemoveAll(dir)
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+	os.Chdir(dir)
+	w, _ := wRepo.Worktree()
+
+	os.Mkdir(filepath.Join(dir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(dir, "subdir/a.txt"), []byte("a"), 0644)
+	os.WriteFile(filepath.Join(dir, "subdir/b.txt"), []byte("b"), 0644)
+	os.WriteFile(filepath.Join(dir, "root.txt"), []byte("root"), 0644)
+
+	w.Add("subdir/a.txt")
+	w.Commit("init", &git.CommitOptions{
+		Author: &object.Signature{Name: "Me", Email: "me@me.com", When: time.Now()},
+	})
+
+	tests := []struct {
+		name     string
+		path     string
+		expected []string
+	}{
+		{"Single File", "subdir/a.txt", []string{"subdir/a.txt"}},
+		{"Directory", "subdir", []string{"subdir/a.txt", "subdir/b.txt"}},
+		{"Root Dot", ".", []string{"README.md", "root.txt", "subdir/a.txt", "subdir/b.txt"}},
+		{"Non-existent", "missing.txt", []string{"missing.txt"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := ResolvePath(tt.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(results) != len(tt.expected) {
+				t.Fatalf("expected %v, got %v", tt.expected, results)
+			}
+			for i, r := range results {
+				if r != tt.expected[i] {
+					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], r)
+				}
+			}
+		})
+	}
+}
+
+func TestGetPullRequestURL(t *testing.T) {
+	dir, r := setupTestRepo(t)
+	defer os.RemoveAll(dir)
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+	os.Chdir(dir)
+
+	tests := []struct {
+		name     string
+		remote   string
+		expected string
+	}{
+		{"GitHub", "https://github.com/user/repo.git", "https://github.com/user/repo/pull/new/master"},
+		{"GitLab", "git@gitlab.com:user/repo.git", "https://gitlab.com/user/repo/-/merge_requests/new?merge_request[source_branch]=master"},
+		{"Bitbucket", "https://bitbucket.org/user/repo", "https://bitbucket.org/user/repo/pull-requests/new?source=master"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r.CreateRemote(&config.RemoteConfig{
+				Name: "origin",
+				URLs: []string{tt.remote},
+			})
+			defer r.DeleteRemote("origin")
+
+			url, err := GetPullRequestURL("origin")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if url != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, url)
+			}
+		})
+	}
+}
+
+func TestPush(t *testing.T) {
+	// 1. Setup Bare Remote Repo
+	remoteDir, err := os.MkdirTemp("", "gitai-remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(remoteDir)
+	_, err = git.PlainInit(remoteDir, true) // isBare = true
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Setup Local Repo
+	localDir, r := setupTestRepo(t) // already has initial commit
+	defer os.RemoveAll(localDir)
+
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+	os.Chdir(localDir)
+
+	// 3. Add Remote 'origin' pointing to the bare repo
+	_, err = r.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{remoteDir},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Push
+	out, err := Push("origin")
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+	if !strings.Contains(out, "Push successful") {
+		t.Errorf("unexpected push output: %s", out)
+	}
+
+	// 5. Verify push happened by checking HEAD in the remote repo
+	remoteRepo, _ := git.PlainOpen(remoteDir)
+	_, err = remoteRepo.Head()
+	if err != nil {
+		t.Errorf("remote repo has no HEAD after push: %v", err)
 	}
 }

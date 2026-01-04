@@ -19,16 +19,26 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
+// ErrOutsideRepo is returned when a provided path is not within the git repository.
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
+// resolveAuth attempts to find a suitable authentication method for the given URL.
+// It supports SSH agent and local private key files in ~/.ssh.
 func resolveAuth(url string) (transport.AuthMethod, error) {
 	if strings.HasPrefix(url, "http") {
 		return nil, nil
 	}
 
+	if !strings.HasPrefix(url, "ssh://") && !strings.Contains(url, "@") {
+		return nil, nil
+	}
+
 	user := "git"
 	if parts := strings.Split(url, "@"); len(parts) > 1 {
-		user = strings.Split(parts[0], "://")[0]
+		user = parts[0]
+		if strings.Contains(user, "://") {
+			user = strings.Split(user, "://")[1]
+		}
 	}
 
 	keyCallback := func() (signers []ssh.Signer, err error) {
@@ -71,6 +81,7 @@ func resolveAuth(url string) (transport.AuthMethod, error) {
 	return auth, nil
 }
 
+// getRepo opens the git repository and returns its worktree and root path.
 func getRepo() (*git.Repository, *git.Worktree, string, error) {
 	root, err := GetGitRoot()
 	if err != nil {
@@ -84,6 +95,7 @@ func getRepo() (*git.Repository, *git.Worktree, string, error) {
 	return r, w, root, err
 }
 
+// toRel converts a file path to a repository-relative path.
 func toRel(path string) (string, error) {
 	root, err := GetGitRoot()
 	if err != nil {
@@ -106,15 +118,16 @@ func toRel(path string) (string, error) {
 	return rel, nil
 }
 
-func Push() (string, error) {
+// Push pushes the current branch to the specified remote.
+func Push(remoteName string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
 	}
 
-	remote, err := r.Remote("origin")
+	remote, err := r.Remote(remoteName)
 	if err != nil {
-		return "", fmt.Errorf("remote 'origin' not found")
+		return "", fmt.Errorf("remote '%s' not found", remoteName)
 	}
 
 	urls := remote.Config().URLs
@@ -137,6 +150,7 @@ func Push() (string, error) {
 	return "Push successful", nil
 }
 
+// Commit stages the specified files and creates a new commit with the given message.
 func Commit(files []string, message string) error {
 	r, w, _, err := getRepo()
 	if err != nil {
@@ -171,6 +185,7 @@ func Commit(files []string, message string) error {
 	return err
 }
 
+// GetStatusForFiles returns the porcelain status of the specified files.
 func GetStatusForFiles(files []string) (string, error) {
 	_, w, _, err := getRepo()
 	if err != nil {
@@ -193,6 +208,7 @@ func GetStatusForFiles(files []string) (string, error) {
 	return sb.String(), nil
 }
 
+// GetChangedFiles returns a sorted list of all modified, added, or deleted files in the repository.
 func GetChangedFiles() ([]string, error) {
 	_, w, _, err := getRepo()
 	if err != nil {
@@ -214,6 +230,7 @@ func GetChangedFiles() ([]string, error) {
 	return changed, nil
 }
 
+// GetChangesForFiles generates a unified diff for the specified files against the HEAD commit.
 func GetChangesForFiles(files []string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
@@ -250,6 +267,7 @@ func GetChangesForFiles(files []string) (string, error) {
 	return sb.String(), nil
 }
 
+// ResolvePath returns a list of all repository files within the given path.
 func ResolvePath(path string) ([]string, error) {
 	r, w, root, err := getRepo()
 	if err != nil {
@@ -306,6 +324,7 @@ func ResolvePath(path string) ([]string, error) {
 	return results, nil
 }
 
+// getHeadTree returns the tree object of the HEAD commit.
 func getHeadTree(r *git.Repository) (*object.Tree, error) {
 	head, err := r.Head()
 	if err != nil {
@@ -318,6 +337,7 @@ func getHeadTree(r *git.Repository) (*object.Tree, error) {
 	return c.Tree()
 }
 
+// formatStatusCode maps a git status code to its porcelain rune representation.
 func formatStatusCode(c git.StatusCode) rune {
 	switch c {
 	case git.Unmodified:
@@ -350,9 +370,7 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	patches := dmp.PatchMake(old, new)
 
 	var sb strings.Builder
-
 	sb.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
-
 	if isNew {
 		sb.WriteString(fmt.Sprintf("new file mode 100644\n--- /dev/null\n+++ b/%s\n", path))
 	} else if isDel {
@@ -360,11 +378,11 @@ func generateDiffString(path, old, new string, isNew, isDel bool) string {
 	} else {
 		sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
 	}
-
 	sb.WriteString(dmp.PatchToText(patches))
 	return sb.String()
 }
 
+// normalizeGitURL converts git SSH or git:// URLs to an HTTPS web URL format.
 func normalizeGitURL(url string) string {
 	url = strings.TrimSpace(url)
 	url = strings.TrimSuffix(url, ".git")
@@ -380,7 +398,8 @@ func normalizeGitURL(url string) string {
 	return url
 }
 
-func GetPullRequestURL() (string, error) {
+// GetPullRequestURL generates a web URL to create a new pull request for the current branch.
+func GetPullRequestURL(remoteName string) (string, error) {
 	r, _, _, err := getRepo()
 	if err != nil {
 		return "", err
@@ -395,9 +414,9 @@ func GetPullRequestURL() (string, error) {
 		branch = head.Hash().String()
 	}
 
-	rem, err := r.Remote("origin")
+	rem, err := r.Remote(remoteName)
 	if err != nil || len(rem.Config().URLs) == 0 {
-		return "", errors.New("no remote origin")
+		return "", fmt.Errorf("no remote %s", remoteName)
 	}
 
 	url := rem.Config().URLs[0]

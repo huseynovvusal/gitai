@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
 func TestFormatStatusCode(t *testing.T) {
@@ -19,35 +20,40 @@ func TestFormatStatusCode(t *testing.T) {
 		{git.Renamed, 'R'},
 		{git.Copied, 'C'},
 		{git.Untracked, '?'},
-		{git.StatusCode('X'), '?'}, // Default case
+		{git.StatusCode(255), '?'}, // Unknown code
 	}
 
 	for _, tt := range tests {
-		result := formatStatusCode(tt.code)
-		if result != tt.expected {
-			t.Errorf("formatStatusCode(%v) = %c; want %c", tt.code, result, tt.expected)
-		}
+		t.Run(string(tt.expected), func(t *testing.T) {
+			result := formatStatusCode(tt.code)
+			if result != tt.expected {
+				t.Errorf("formatStatusCode(%v) = %c; want %c", tt.code, result, tt.expected)
+			}
+		})
 	}
 }
 
 func TestNormalizeGitURL(t *testing.T) {
 	tests := []struct {
+		name     string
 		input    string
 		expected string
 	}{
-		{"https://github.com/artback/gitai.git", "https://github.com/artback/gitai"},
-		{"git@github.com:artback/gitai.git", "https://github.com/artback/gitai"},
-		{"git@github.com:artback/gitai", "https://github.com/artback/gitai"},
-		{"ssh://git@github.com/artback/gitai.git", "https://github.com/artback/gitai"},
-		{"  https://github.com/artback/gitai  ", "https://github.com/artback/gitai"},
-		{"github.com/artback/gitai", "https://github.com/artback/gitai"},
+		{"HTTPS URL", "https://github.com/artback/gitai.git", "https://github.com/artback/gitai"},
+		{"HTTP URL", "http://github.com/artback/gitai.git", "http://github.com/artback/gitai"},
+		{"SSH git@ URL", "git@github.com:artback/gitai.git", "https://github.com/artback/gitai"},
+		{"SSH ssh:// URL", "ssh://git@github.com/artback/gitai.git", "https://github.com/artback/gitai"},
+		{"No Scheme", "github.com/artback/gitai", "https://github.com/artback/gitai"},
+		{"Spaces", "  https://github.com/artback/gitai  ", "https://github.com/artback/gitai"},
 	}
 
 	for _, tt := range tests {
-		result := normalizeGitURL(tt.input)
-		if result != tt.expected {
-			t.Errorf("normalizeGitURL(%q) = %q; want %q", tt.input, result, tt.expected)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeGitURL(tt.input)
+			if result != tt.expected {
+				t.Errorf("normalizeGitURL(%q) = %q; want %q", tt.input, result, tt.expected)
+			}
+		})
 	}
 }
 
@@ -62,6 +68,8 @@ func TestResolveAuth(t *testing.T) {
 		{"SSH URL (git@)", "git@github.com:artback/gitai.git", false},
 		{"SSH URL (ssh://)", "ssh://git@github.com/artback/gitai.git", false},
 		{"SSH URL (custom user)", "ssh://custom@github.com/artback/gitai.git", false},
+		{"SSH URL (complex user)", "ssh://user.name@host.com:22/repo", false},
+		{"Local Path", "/tmp/repo", true},
 	}
 
 	for _, tt := range tests {
@@ -76,15 +84,31 @@ func TestResolveAuth(t *testing.T) {
 				}
 			} else {
 				if err != nil {
-					t.Logf("resolveAuth(%q) failed: %v", tt.url, err)
-				} else if result == nil {
-					t.Logf("resolveAuth(%q) returned nil auth", tt.url)
-				} else {
-					t.Logf("resolveAuth(%q) result: %s", tt.url, result.String())
+					t.Logf("resolveAuth(%q) failed as expected in this env: %v", tt.url, err)
+				} else if result != nil {
+					t.Logf("resolveAuth(%q) returned: %s", tt.url, result.String())
 				}
 			}
 		})
 	}
+}
+
+func TestResolveAuth_Callback(t *testing.T) {
+	// Trigger the callback to cover its internal logic
+	auth, err := resolveAuth("git@github.com:artback/gitai.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkc, ok := auth.(*gitssh.PublicKeysCallback)
+	if !ok {
+		t.Fatal("expected *gitssh.PublicKeysCallback")
+	}
+
+	// We don't care about the result, just that it executes.
+	// We set a fake SSH_AUTH_SOCK to hit that path too.
+	t.Setenv("SSH_AUTH_SOCK", "/tmp/non-existent-sock")
+	_, _ = pkc.Callback()
 }
 
 func TestGenerateDiffString(t *testing.T) {
@@ -98,40 +122,40 @@ func TestGenerateDiffString(t *testing.T) {
 		contains  []string
 	}{
 		{
-			name:      "New file",
-			path:      "main.go",
-			oldText:   "",
-			newText:   "package main",
-			isNew:     true,
-			isDeleted: false,
-			contains:  []string{"diff --git a/main.go b/main.go", "new file mode 100644", "+++ b/main.go", "package main"},
+			"New File",
+			"main.go",
+			"",
+			"package main",
+			true,
+			false,
+			[]string{"diff --git a/main.go b/main.go", "new file mode 100644", "+++ b/main.go", "package main"},
 		},
 		{
-			name:      "Modified file",
-			path:      "README.md",
-			oldText:   "Hello",
-			newText:   "Hello World",
-			isNew:     false,
-			isDeleted: false,
-			contains:  []string{"diff --git a/README.md b/README.md", "--- a/README.md", "+++ b/README.md", "Hello", "World"},
+			"Modified File",
+			"README.md",
+			"Hello",
+			"Hello World",
+			false,
+			false,
+			[]string{"diff --git a/README.md b/README.md", "--- a/README.md", "+++ b/README.md", "Hello", "World"},
 		},
 		{
-			name:      "Deleted file",
-			path:      "old.txt",
-			oldText:   "bye",
-			newText:   "",
-			isNew:     false,
-			isDeleted: true,
-			contains:  []string{"diff --git a/old.txt b/old.txt", "deleted file mode 100644", "--- a/old.txt", "+++ /dev/null"},
+			"Deleted File",
+			"old.txt",
+			"content",
+			"",
+			false,
+			true,
+			[]string{"diff --git a/old.txt b/old.txt", "deleted file mode 100644", "--- a/old.txt", "+++ /dev/null"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := generateDiffString(tt.path, tt.oldText, tt.newText, tt.isNew, tt.isDeleted)
-			for _, search := range tt.contains {
-				if !strings.Contains(result, search) {
-					t.Errorf("generateDiffString result missing %q\nResult:\n%s", search, result)
+			for _, s := range tt.contains {
+				if !strings.Contains(result, s) {
+					t.Errorf("Expected result to contain %q\nResult:\n%s", s, result)
 				}
 			}
 		})

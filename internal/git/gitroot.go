@@ -7,8 +7,14 @@ import (
 	"github.com/go-git/go-git/v5"
 )
 
+// GetGitRoot returns the absolute path to the repository root.
 func GetGitRoot() (string, error) {
-	path, err := filepath.Abs(".")
+	return findGitRoot(".")
+}
+
+// findGitRoot traverses up from the startPath to find the git repository root.
+func findGitRoot(startPath string) (string, error) {
+	path, err := filepath.Abs(startPath)
 	if err != nil {
 		return "", err
 	}

@@ -146,9 +146,9 @@ func runCommitAsync(files []string, message string) tea.Cmd {
 	}
 }
 
-func runPushAsync() tea.Cmd {
+func runPushAsync(remote string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := git.Push()
+		out, err := git.Push(remote)
 		return pushResultMsg{err: err, output: out}
 	}
 }
@@ -250,7 +250,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateCommitted {
 				m.state = StatePushing
 				m.errMsg = ""
-				return m, tea.Batch(m.spinner.Tick, runPushAsync())
+				return m, tea.Batch(m.spinner.Tick, runPushAsync("origin"))
 			}
 		case "e":
 			if m.state == StateGenerated {
