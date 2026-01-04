@@ -85,6 +85,14 @@ gitai suggest internal/main.go README.md
 gitai suggest internal/
 ```
 
+#### Speeding up with Hints
+You can skip the interactive hint prompt by providing it via CLI or disabling it:
+
+```sh
+gitai suggest -H "Fix login race condition"  # Use hint and skip prompt
+gitai suggest --no-hint                      # Skip prompt without hint
+```
+
 #### Selecting an AI Provider
 You can override the configured AI backend for a single run:
 
