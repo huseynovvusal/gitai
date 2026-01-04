@@ -1,6 +1,10 @@
 # 🤖 **Gitai** — AI-powered Git Assistant
 
-Gitai is an open-source CLI tool that helps developers generate **high-quality git commit messages** using AI. It inspects repository changes (diff + status) and provides concise, actionable suggestions via an interactive TUI.
+Gitai is an AI-powered CLI tool that helps you write better git commit messages, faster. It analyzes your changes (diffs) to generate concise, standardized commits that follow best practices.
+
+It supports two main workflows:
+- **Interactive Mode**: A terminal UI (TUI) to visually select files, add context hints, and review/edit suggestions.
+- **Targeted Mode**: A quick CLI command to generate messages for specific files or directories instantly.
 
 Below is a quick animated demo of gitai running in a terminal:
 
@@ -130,12 +134,22 @@ To run locally while developing:
 go run ./main.go suggest
 ```
 
-### 🧪 Running unit tests
+### 🧪 Testing & Linting
 
-If tests are added, run them with:
+Run the unit tests using `make` or the standard Go toolchain. Tests are designed to run without external dependencies (using mocks for AI providers).
 
 ```sh
+# Run all tests
+make test
+
+# Or using the Go toolchain directly
 go test ./...
+```
+
+If you have `golangci-lint` installed, you can also run the linter:
+
+```sh
+make lint
 ```
 
 ### ➕ Adding a new AI backend
@@ -147,19 +161,13 @@ go test ./...
 
 This project uses [GoReleaser](https://goreleaser.com/) and GitHub Actions for releases. To create a new release:
 
-1. **Tag the commit**: Create a new semantic version tag.
-   ```sh
-   git tag -a v1.2.3 -m "Release v1.2.3"
-   ```
-2. **Push the tag**:
-   ```sh
-   git push origin v1.2.3
-   ```
-3. **Automated Release**: The GitHub Action will automatically:
-   - Build binaries for multiple platforms.
-   - Create a GitHub Release with a changelog and assets.
-   - Update the Homebrew tap at `artback/homebrew-gitai`.
-   - Publish Linux packages (DEB/RPM).
+1. **Update the VERSION file**: Change the version number in the `VERSION` file (e.g., `1.2.3`).
+2. **Push to main**: When the change is merged or pushed to the `main` branch, a GitHub Action automatically:
+   - Creates a new git tag (e.g., `v1.2.3`).
+   - Builds binaries for multiple platforms via GoReleaser.
+   - Creates a GitHub Release with a changelog and assets.
+   - Updates the Homebrew tap at `artback/homebrew-gitai`.
+   - Publishes Linux packages (DEB/RPM).
 
 > **Note**: Ensure `TAP_GITHUB_TOKEN` is configured in the repository secrets for the Homebrew tap update to work.
 
