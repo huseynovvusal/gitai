@@ -31,13 +31,20 @@ jobs:
           go build -o bin/gitai main.go
           chmod +x bin/gitai
 
-      - name: Install dependencies (ffmpeg)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          # ttyd is often not in standard repos or is old, downloading binary is safer
+          wget -q -O ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.3/ttyd.x86_64
+          sudo mv ttyd /usr/local/bin/ttyd
+          sudo chmod +x /usr/local/bin/ttyd
+
+      - name: Install VHS
+        run: go install github.com/charmbracelet/vhs@latest
 
       - name: Run VHS
-        uses: charmbracelet/vhs-action@v1
-        with:
-          path: 'assets/demo.tape'
+        run: vhs assets/demo.tape
 
       - name: Check for changes
         id: git-check
