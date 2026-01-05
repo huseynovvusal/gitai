@@ -30,7 +30,7 @@ Show
 Type "git status" Sleep 500ms Enter
 Sleep 1.5s
 
-Type "../bin/gitai suggest --provider gemini" Sleep 500ms Enter
+Type "../bin/gitai suggest" Sleep 500ms Enter
 Sleep 2s
 
 # Select the file (Space to toggle, Enter to confirm)
