@@ -47,7 +47,7 @@ jobs:
       - name: Run VHS
         env:
           GITAI_AI_PROVIDER: openai
-          OPENAI_API_KEY: {{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_BASE_URL: "https://models.github.ai/inference"
         run: vhs assets/demo.tape
 
