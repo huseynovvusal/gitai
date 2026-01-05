@@ -44,7 +44,18 @@ jobs:
       - name: Install VHS
         run: go install github.com/charmbracelet/vhs@latest
 
+      - name: Create Fake AI Provider
+        run: |
+          cat <<EOF > /tmp/fake_ollama
+          #!/bin/sh
+          echo "feat(auth): add nil check to Login function"
+          EOF
+          chmod +x /tmp/fake_ollama
+
       - name: Run VHS
+        env:
+          GITAI_AI_PROVIDER: ollama
+          GITAI_OLLAMA_PATH: /tmp/fake_ollama
         run: vhs assets/demo.tape
 
       - name: Check for changes
