@@ -21,6 +21,7 @@ func (p Provider) IsValid() bool {
 
 type Config struct {
 	APIKey      string
+	BaseUrl     string
 	MaxTokens   int64
 	Temperature float64
 	OllamaPath  string

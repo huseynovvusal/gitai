@@ -34,13 +34,24 @@ func ParseProvider(str string) (Provider, error) {
 // GPTProvider implements AIProvider for OpenAI.
 type GPTProvider struct {
 	apiKey      string
+	baseUrl     string
 	maxTokens   int64
 	temperature float64
 }
 
 // NewGPTProvider creates a new GPTProvider.
-func NewGPTProvider(apiKey string, maxTokens int64, temperature float64) *GPTProvider {
-	return &GPTProvider{apiKey: apiKey, maxTokens: maxTokens, temperature: temperature}
+func NewGPTProvider(
+	apiKey string,
+	baseUrl string,
+	maxTokens int64,
+	temperature float64,
+) *GPTProvider {
+	return &GPTProvider{
+		apiKey:      apiKey,
+		baseUrl:     baseUrl,
+		maxTokens:   maxTokens,
+		temperature: temperature,
+	}
 }
 
 // GenerateContent generates content using OpenAI.
@@ -48,11 +59,16 @@ func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMe
 	if p.apiKey == "" {
 		return "", ErrAPIKeyNotSet
 	}
-
-	client := openai.NewClient(option.WithAPIKey(p.apiKey))
+	args := []option.RequestOption{option.WithAPIKey(p.apiKey)}
+	if p.baseUrl != "" {
+		args = append(args, option.WithBaseURL(p.baseUrl))
+	}
+	client := openai.NewClient(
+		args...,
+	)
 
 	res, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModelGPT3_5Turbo,
+		Model: openai.ChatModelGPT5Mini,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemMessage),
 			openai.UserMessage(userMessage),

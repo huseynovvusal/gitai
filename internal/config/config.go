@@ -20,6 +20,7 @@ type Config struct {
 type AIConfig struct {
 	Provider    string
 	APIKey      string
+	BaseUrl     string
 	Temperature float64
 	MaxTokens   int64
 }
@@ -62,6 +63,7 @@ func LoadConfig(v *viper.Viper) (*Config, error) {
 	v.AutomaticEnv()
 
 	// Bindings
+	_ = v.BindEnv("ai.base_url", "OPENAI_BASE_URL")
 	_ = v.BindEnv("ollama.path", "OLLAMA_API_PATH")
 	_ = v.BindEnv("ai.api_key", "OPENAI_API_KEY")
 	_ = v.BindEnv("ai.api_key", "GEMINI_API_KEY")

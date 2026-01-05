@@ -13,7 +13,7 @@ type AIProvider interface {
 func NewAIProvider(p Provider, cfg Config) (AIProvider, error) {
 	switch p {
 	case ProviderGPT:
-		return NewGPTProvider(cfg.APIKey, cfg.MaxTokens, cfg.Temperature), nil
+		return NewGPTProvider(cfg.APIKey, cfg.BaseUrl, cfg.MaxTokens, cfg.Temperature), nil
 	case ProviderGemini:
 		return NewGeminiProvider(cfg.APIKey, int32(cfg.MaxTokens), float32(cfg.Temperature)), nil
 	case ProviderOllama:

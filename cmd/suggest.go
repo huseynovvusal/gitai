@@ -56,7 +56,7 @@ func NewSuggestCmd() *cobra.Command {
 				if errors.As(err, &invalidError) {
 					cmd.PrintErrln(err)
 				} else {
-					cmd.PrintErrln("Invalid provider:", err)
+					cmd.PrintErrln("Error parsing provider:", err)
 				}
 
 				return

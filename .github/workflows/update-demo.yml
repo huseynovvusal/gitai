@@ -44,18 +44,11 @@ jobs:
       - name: Install VHS
         run: go install github.com/charmbracelet/vhs@latest
 
-      - name: Create Fake AI Provider
-        run: |
-          cat <<EOF > gemini
-          #!/bin/sh
-          echo "feat(auth): add nil check to Login function"
-          EOF
-          chmod +x gemini
-          sudo mv gemini /usr/local/bin/gemini
-
       - name: Run VHS
         env:
-          GITAI_AI_PROVIDER: geminicli
+          GITAI_AI_PROVIDER: openai
+          OPENAI_API_KEY: {{ secrets.GITHUB_TOKEN }}
+          OPENAI_BASE_URL: "https://models.github.ai/inference"
         run: vhs assets/demo.tape
 
       - name: Check for changes
