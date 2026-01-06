@@ -137,7 +137,7 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 
 	finalModel, err := aiModelProgram.Run()
 	if err != nil {
-		panic(err)
+		aiModelProgram.Println(err)
 	}
 
 	// 5. Post-Run Actions (PR Links)

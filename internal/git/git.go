@@ -96,8 +96,13 @@ func (s *Service) GetChangesForFiles(files []string) (string, error) {
 		}
 
 		oldText, isNew := "", true
+		isBinary := false
+
 		if headTree != nil {
 			if f, err := headTree.File(rel); err == nil {
+				if bin, _ := f.IsBinary(); bin {
+					isBinary = true
+				}
 				if c, err := f.Contents(); err == nil {
 					oldText, isNew = c, false
 				}
@@ -108,9 +113,33 @@ func (s *Service) GetChangesForFiles(files []string) (string, error) {
 		newText := string(newBytes)
 		isDeleted := err != nil
 
+		if !isBinary && !isDeleted {
+			limit := 8000
+			if len(newBytes) < limit {
+				limit = len(newBytes)
+			}
+			for i := 0; i < limit; i++ {
+				if newBytes[i] == 0 {
+					isBinary = true
+					break
+				}
+			}
+		}
+
 		if isNew && isDeleted {
 			continue
 		}
+
+		if isBinary {
+			builder.WriteString(fmt.Sprintf("diff --git a/%s b/%s\nBinary files differ\n", rel, rel))
+			continue
+		}
+
+		if len(oldText) > 500*1024 || len(newText) > 500*1024 {
+			builder.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n--- a/%s\n+++ b/%s\nBinary files or large files differ\n", rel, rel, rel, rel))
+			continue
+		}
+
 		builder.WriteString(generateDiffString(rel, oldText, newText, isNew, isDeleted))
 	}
 	return builder.String(), nil
@@ -260,8 +289,13 @@ func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
 	for _, file := range combinedFiles {
 		// oldText comes from Parent Tree
 		oldText, isNew := "", true
+		isBinary := false
+
 		if parentTree != nil {
 			if f, err := parentTree.File(file); err == nil {
+				if bin, _ := f.IsBinary(); bin {
+					isBinary = true
+				}
 				if c, err := f.Contents(); err == nil {
 					oldText, isNew = c, false
 				}
@@ -269,29 +303,23 @@ func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
 		}
 
 		// newText comes from Working Tree (simulating what will be committed)
-		// NOTE: This assumes we are committing the *current working state* of these files.
-		// If a file is in HEAD but deleted in working tree, os.ReadFile fails -> isDeleted.
-		// If a file is in HEAD and not in 'files' arg, but exists in working tree,
-		// we assume it keeps its working tree state (since --amend uses index, and we Add 'files').
-		// Wait: files NOT in 'files' arg but in HEAD:
-		// If we don't 'Add' them, they stay as they are in the Index?
-		// No, 'go-git' Commit uses the Index.
-		// If we simply open the repo, the Index matches HEAD.
-		// So if we don't touch them, they match HEAD.
-		// BUT 'os.ReadFile' reads from Worktree.
-		// If the file is modified in Worktree but NOT staged (not in 'files'), 
-		// we should theoretically read from HEAD (Index), not Worktree.
-		// HOWEVER, gitai usually assumes "what you see is what you get" and often Stages everything selected.
-		// The logic here is slightly imperfect if the user has unstaged changes they don't want to commit
-		// in files that ARE in the previous commit.
-		// But for 'amend', usually you want to update the commit to match your current state or add to it.
-		// Let's assume reading from Worktree is acceptable for the "Suggestion" context,
-		// or we can try to be smarter.
-		// For now, Worktree read is consistent with existing GetChangesForFiles.
-
 		newBytes, err := os.ReadFile(filepath.Clean(file))
 		newText := string(newBytes)
 		isDeleted := err != nil
+
+		if !isBinary && !isDeleted {
+			// Check for binary content in new file (simple heuristic)
+			limit := 8000
+			if len(newBytes) < limit {
+				limit = len(newBytes)
+			}
+			for i := 0; i < limit; i++ {
+				if newBytes[i] == 0 {
+					isBinary = true
+					break
+				}
+			}
+		}
 
 		if isNew && isDeleted {
 			continue
@@ -299,6 +327,17 @@ func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
 		
 		// Optimization: if content matches, skip (no diff)
 		if oldText == newText && !isNew && !isDeleted {
+			continue
+		}
+
+		if isBinary {
+			builder.WriteString(fmt.Sprintf("diff --git a/%s b/%s\nBinary files differ\n", file, file))
+			continue
+		}
+
+		// Safety check: skip diff generation for large files to avoid panics in diffmatchpatch
+		if len(oldText) > 500*1024 || len(newText) > 500*1024 {
+			builder.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n--- a/%s\n+++ b/%s\nBinary files or large files differ\n", file, file, file, file))
 			continue
 		}
 
@@ -789,7 +828,14 @@ func formatStatusCode(c git.StatusCode) rune {
 // simpler custom formats like "M file.go") because LLMs perform significantly
 // better with it. The standard git headers act as strong "mental anchors" that
 // prevent context bleeding between files and align with the model's training data.
-func generateDiffString(path, oldText, newText string, isNew, isDel bool) string {
+func generateDiffString(path, oldText, newText string, isNew, isDel bool) (result string) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Fallback if diffmatchpatch panics
+			result = fmt.Sprintf("diff --git a/%s b/%s\n(Diff generation failed: %v)\n", path, path, r)
+		}
+	}()
+
 	dmp := diffmatchpatch.New()
 	patches := dmp.PatchMake(oldText, newText)
 	patchText := dmp.PatchToText(patches)
