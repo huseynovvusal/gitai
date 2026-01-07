@@ -53,7 +53,7 @@ jobs:
           # not grant access to the Models API.
           OPENAI_API_KEY: ${{ secrets.GITHUB_MODELS_TOKEN }}
           # Confirm the correct base URL for GitHub Models in your account/docs.
-          OPENAI_BASE_URL: "https://models.githubusercontent.com/"
+          OPENAI_BASE_URL: "https://models.github.ai/inference"
         run: vhs assets/demo.tape
 
       - name: Check for changes
