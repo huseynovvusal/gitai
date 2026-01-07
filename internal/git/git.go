@@ -150,36 +150,8 @@ func (s *Service) GetFilesInLastCommit() ([]string, error) {
 	return files, nil
 }
 
-func getNameEmail(c *gitconfig.Config) (string, string) {
-	if c == nil {
-		return "", ""
-	}
-	return c.User.Name, c.User.Email
-}
-
-// Push pushes the current branch to the specified remote.
-func (s *Service) Push(ctx context.Context, remoteName string) (string, error) {
-	repo, _, _, err := getRepo()
-	if err != nil {
-		return "", fmt.Errorf("failed to open repository: %w", err)
-	}
-
-	remote, err := repo.Remote(remoteName)
-	if err != nil {
-		return "", fmt.Errorf("remote '%s' not found: %w", remoteName, err)
-	}
-
-	urls := remote.Config().URLs
-	if len(urls) == 0 {
-		return "", fmt.Errorf("remote '%s' has no URLs", remoteName)
-	}
-
-	auth := resolveAuth(urls[0])
-
-	err = repo.PushContext(ctx, &git.PushOptions{
-		RemoteName: remoteName,
-		Auth:       auth,
-	})
+func (s *Service) GetLastCommitMessage() (string, error) {
+	ctx, err := s.getRepoContext()
 	if err != nil {
 		return "", err
 	}
@@ -189,23 +161,6 @@ func (s *Service) Push(ctx context.Context, remoteName string) (string, error) {
 	return ctx.head.Message, nil
 }
 
-	auth := resolveAuth(urls[0])
-
-	err = repo.PushContext(ctx, &git.PushOptions{
-		RemoteName: remoteName,
-		Auth:       auth,
-		Force:      true,
-	})
-	if err != nil {
-		if errors.Is(err, git.NoErrAlreadyUpToDate) {
-			return "Already up-to-date", nil
-		}
-		return "", fmt.Errorf("failed to force push: %w", err)
-	}
-	return "Force Push successful", nil
-}
-
-// ResolvePath returns a list of all repository files within the given path.
 func (s *Service) ResolvePath(path string) ([]string, error) {
 	ctx, err := s.getRepoContext()
 	if err != nil {
