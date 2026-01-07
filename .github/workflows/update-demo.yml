@@ -49,9 +49,8 @@ jobs:
         env:
           GITAI_AI_PROVIDER: openai
           # Use a Personal Access Token with the `read:ai_model` scope saved as
-          # the repository secret GITHUB_MODELS_TOKEN. GitHub's GITHUB_TOKEN does
-          # not grant access to the Models API.
-          OPENAI_API_KEY: ${{ secrets.GITHUB_MODELS_TOKEN }}
+          # the repository secret MODELS_TOKEN. 
+          OPENAI_API_KEY: ${{ secrets.MODELS_TOKEN }}
           # Confirm the correct base URL for GitHub Models in your account/docs.
           OPENAI_BASE_URL: "https://models.github.ai/inference"
         run: vhs assets/demo.tape
