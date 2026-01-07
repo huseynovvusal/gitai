@@ -20,7 +20,7 @@ Type "git config user.email 'demo@gitai.local'" Enter
 Type "echo 'package auth\n\nfunc Login(user string) bool {\n    return true\n}' > pkg/auth/login.go" Enter
 Type "git add ." Enter
 Type "git commit -m 'feat: initial auth implementation'" Enter
-Type "go build -o ../bin/mockapi ../cmd/mockapi/main.go" Enter
+Type "go build -o ../bin/mockapi ../assets/mockapi/main.go" Enter
 Type "../bin/mockapi &" Enter
 Type "MOCK_PID=$!" Enter
 Type "export OPENAI_BASE_URL=http://localhost:8080/v1" Enter
