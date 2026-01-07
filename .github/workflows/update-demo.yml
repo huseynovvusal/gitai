@@ -47,13 +47,6 @@ jobs:
         run: go install github.com/charmbracelet/vhs@latest
 
       - name: Run VHS
-        env:
-          GITAI_AI_PROVIDER: openai
-          # Use a Personal Access Token with the `read:ai_model` scope saved as
-          # the repository secret MODELS_TOKEN. 
-          OPENAI_API_KEY: ${{ secrets.MODELS_TOKEN }}
-          # Confirm the correct base URL for GitHub Models in your account/docs.
-          OPENAI_BASE_URL: "https://models.github.ai/inference"
         run: vhs assets/demo.tape
 
       - name: Check for changes

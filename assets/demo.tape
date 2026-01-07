@@ -20,6 +20,12 @@ Type "git config user.email 'demo@gitai.local'" Enter
 Type "echo 'package auth\n\nfunc Login(user string) bool {\n    return true\n}' > pkg/auth/login.go" Enter
 Type "git add ." Enter
 Type "git commit -m 'feat: initial auth implementation'" Enter
+Type "go build -o ../bin/mockapi ../cmd/mockapi/main.go" Enter
+Type "../bin/mockapi &" Enter
+Type "MOCK_PID=$!" Enter
+Type "export OPENAI_BASE_URL=http://localhost:8080/v1" Enter
+Type "export OPENAI_API_KEY=dummy" Enter
+Type "export GITAI_AI_PROVIDER=openai" Enter
 
 # Make a change (add a nil check)
 Type "echo 'package auth\n\nfunc Login(user *string) bool {\n    if user == nil {\n        return false\n    }\n    return true\n}' > pkg/auth/login.go" Enter
@@ -47,5 +53,6 @@ Sleep 2s
 
 # Cleanup (hidden)
 Hide
+Type "kill $MOCK_PID" Enter
 Type "cd .." Enter
 Type "rm -rf demo_env" Enter
