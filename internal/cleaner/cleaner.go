@@ -5,77 +5,77 @@ import (
 	"strings"
 )
 
-// CleanCommitMessage cleans and formats a raw commit message string.
-// It handles:
-// 1. Stripping Markdown code fences.
-// 2. Enforcing "Tim Pope" style rules (no trailing period in subject, blank line separation).
-// 3. Normalizing bullet points to the specified character.
+var (
+	bullets = []string{"* ", "• ", "- ", ". "}
+)
+
+// MessageCleaner defines a function signature for a transformation step
+type MessageCleaner func(string) string
+
 func CleanCommitMessage(s string, bulletChar string) string {
+	// Define the pipeline in the order of execution
+	pipeline := []MessageCleaner{
+		strings.TrimSpace,
+		stripMarkdownFences,
+		ensureBlankLineAfterSubject,
+		stripSubjectPeriod,
+		normalizeBullets(bulletChar), // Returns a closure
+		strings.TrimSpace,
+	}
+
+	for _, transform := range pipeline {
+		s = transform(s)
+	}
+	return s
+}
+
+func stripMarkdownFences(s string) string {
 	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "```") || !strings.HasSuffix(s, "```") {
+		return s
+	}
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
 
-	// 1. Handle Markdown Fences
-	if strings.HasPrefix(s, "```") && strings.HasSuffix(s, "```") {
-		s = strings.TrimPrefix(s, "```")
-		s = strings.TrimSuffix(s, "```")
-
-		// Handle Language Identifier (e.g., ```go)
-		if firstLine, rest, found := strings.Cut(s, "\n"); found {
-			if !strings.Contains(firstLine, " ") {
-				s = rest
-			}
+	if firstLine, rest, found := strings.Cut(s, "\n"); found {
+		if !strings.Contains(firstLine, " ") {
+			return strings.TrimSpace(rest)
 		}
 	}
-
-	s = strings.TrimSpace(s)
-
-	// 2. Enforce "Tim Pope" Style Rules
-	lines := strings.Split(s, "\n")
-	if len(lines) > 0 {
-		// Rule: Do not end the subject line with a period
-		lines[0] = strings.TrimSuffix(strings.TrimSpace(lines[0]), ".")
-	}
-
-	// Rule: Separate subject from body with a blank line
-	if len(lines) > 1 {
-		// If the second line (index 1) is NOT empty, we assume the AI forgot the blank line.
-		if strings.TrimSpace(lines[1]) != "" {
-			// Insert an empty line at index 1
-			lines = append(lines[:1], append([]string{""}, lines[1:]...)...)
-		}
-	}
-
-	s = strings.Join(lines, "\n")
-
-	// 3. Normalize Bullet Points
-	s = normalizeBulletPoints(s, bulletChar)
-
 	return strings.TrimSpace(s)
 }
 
-func normalizeBulletPoints(text string, bullet string) string {
-	if bullet == "" {
-		bullet = "-" // Default
+func stripSubjectPeriod(s string) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > 0 {
+		lines[0] = strings.TrimSuffix(strings.TrimSpace(lines[0]), ".")
 	}
-
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Check for common bullet point indicators
-		if strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "• ") || strings.HasPrefix(trimmed, "- ") {
-			// Find where the content starts (skip the bullet marker)
-			content := ""
-			if after, ok := strings.CutPrefix(trimmed, "* "); ok {
-				content = after
-			} else if after, ok := strings.CutPrefix(trimmed, "• "); ok {
-				content = after
-			} else if after, ok := strings.CutPrefix(trimmed, "- "); ok {
-				content = after
-			}
-
-			// Reconstruct line
-			lines[i] = fmt.Sprintf("%s %s", bullet, content)
-		}
-	}
-
 	return strings.Join(lines, "\n")
+}
+
+func ensureBlankLineAfterSubject(s string) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > 1 && strings.TrimSpace(lines[1]) != "" {
+		lines = append(lines[:1], append([]string{""}, lines[1:]...)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeBullets(bullet string) MessageCleaner {
+	if bullet == "" {
+		bullet = "-"
+	}
+	return func(text string) string {
+		lines := strings.Split(text, "\n")
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			for _, bb := range bullets {
+				if content, found := strings.CutPrefix(trimmed, bb); found {
+					lines[i] = fmt.Sprintf("%s %s", bullet, content)
+					break
+				}
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
 }

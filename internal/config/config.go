@@ -18,28 +18,28 @@ type Config struct {
 }
 
 type AIConfig struct {
-	Provider    string
-	APIKey      string
-	BaseUrl     string
-	Temperature float64
-	MaxTokens   int64
+	Provider    string  `mapstructure:"provider"`
+	APIKey      string  `mapstructure:"api_key"`
+	BaseUrl     string  `mapstructure:"base_url"`
+	Temperature float64 `mapstructure:"temperature"`
+	MaxTokens   int64   `mapstructure:"max_tokens"`
 }
 
 type SuggestConfig struct {
-	Editor      string
-	BulletPoint string
-	Hint        string
-	NoHint      bool
-	Amend       bool
-	ForcePush   bool
+	Editor      string `mapstructure:"editor"`
+	BulletPoint string `mapstructure:"bullet_point"`
+	Hint        string `mapstructure:"hint"`
+	NoHint      bool   `mapstructure:"no-hint"`
+	Amend       bool   `mapstructure:"amend"`
+	ForcePush   bool   `mapstructure:"force_push"`
 }
 
 type SecurityConfig struct {
-	Keywords []string
+	Keywords []string `mapstructure:"keywords"`
 }
 
 type OllamaConfig struct {
-	Path string
+	Path string `mapstructure:"path"`
 }
 
 func LoadConfig(v *viper.Viper) (*Config, error) {

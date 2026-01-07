@@ -449,6 +449,16 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *AIMessageModel) View() string {
 	if m.cancel {
+		if m.state == StateCommitted {
+			var b strings.Builder
+
+			header := shared.HeaderStyle.Render("Committed successfully:")
+			b.WriteString("\n" + header + "\n")
+			b.WriteString(m.commitMessage + "\n")
+
+			return b.String()
+		}
+
 		return shared.ErrorStyle.Render("Commit cancelled.") + "\n"
 	}
 
