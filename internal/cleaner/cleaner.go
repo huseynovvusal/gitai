@@ -5,9 +5,7 @@ import (
 	"strings"
 )
 
-var (
-	bullets = []string{"* ", "• ", "- ", ". "}
-)
+var bullets = []string{"* ", "• ", "- ", ". "}
 
 // MessageCleaner defines a function signature for a transformation step
 type MessageCleaner func(string) string

@@ -3,15 +3,15 @@ package provider
 type Provider string
 
 const (
-	ProviderGPT      Provider = "gpt"
-	ProviderGemini   Provider = "gemini"
-	ProviderOllama   Provider = "ollama"
-	ProvideGeminiCLI Provider = "geminicli"
+	ProviderGPT       Provider = "gpt"
+	ProviderGemini    Provider = "gemini"
+	ProviderOllama    Provider = "ollama"
+	ProvideGeminiCLI  Provider = "geminicli"
 	ProviderAnthropic Provider = "anthropic"
 	ProviderGroq      Provider = "groq"
 	ProviderDeepSeek  Provider = "deepseek"
 	ProviderXAI       Provider = "xai"
-	ProviderNone     Provider = ""
+	ProviderNone      Provider = ""
 )
 
 func (p Provider) IsValid() bool {

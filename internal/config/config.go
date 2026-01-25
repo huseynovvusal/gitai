@@ -19,6 +19,7 @@ type Config struct {
 
 type AIConfig struct {
 	Provider    string  `mapstructure:"provider"`
+	Model       string  `mapstructure:"model"`
 	APIKey      string  `mapstructure:"api_key"`
 	BaseUrl     string  `mapstructure:"base_url"`
 	Temperature float64 `mapstructure:"temperature"`
@@ -81,6 +82,7 @@ func LoadConfig(v *viper.Viper) (*Config, error) {
 	v.SetDefault("suggest.bullet_point", "-")
 	v.SetDefault("ai.temperature", 0.7)
 	v.SetDefault("ai.max_tokens", 256)
+	v.SetDefault("ai.model", "")
 	v.SetDefault("suggest.editor", "system")
 
 	_ = v.ReadInConfig()

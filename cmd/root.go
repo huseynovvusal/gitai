@@ -8,7 +8,7 @@ import (
 )
 
 func Execute(version string) {
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:     "gitai",
 		Version: version,
 		Short:   "Gitai is a CLI tool to interact with Git repositories using AI",

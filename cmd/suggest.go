@@ -66,6 +66,7 @@ func NewSuggestCmd() *cobra.Command {
 				APIKey:      cfg.AI.APIKey,
 				MaxTokens:   cfg.AI.MaxTokens,
 				Temperature: cfg.AI.Temperature,
+				Model:       cfg.AI.Model,
 				OllamaPath:  cfg.Ollama.Path,
 			})
 			if err != nil {

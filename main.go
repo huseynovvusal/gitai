@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+
 	"huseynovvusal/gitai/cmd"
 )
 

@@ -16,7 +16,7 @@ func regexFilter(term string, targets []string) []list.Rank {
 	// However, if we simply replace, we might break existing regex usage.
 	// Let's do a simple replacement for now as requested.
 	term = strings.ReplaceAll(term, "*", ".*")
-	
+
 	re, err := regexp.Compile(term)
 	if err != nil {
 		return nil

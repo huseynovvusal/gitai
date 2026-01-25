@@ -85,8 +85,8 @@ func TestModel_Options(t *testing.T) {
 	if m.List.Width() != 80 {
 		t.Errorf("expected width 80, got %d", m.List.Width())
 	}
-	
-	// Note: checking ShowStatusBar directly might require inspecting the model structure 
+
+	// Note: checking ShowStatusBar directly might require inspecting the model structure
 	// or assuming the option func logic is correct if height/width worked.
 }
 
@@ -104,8 +104,8 @@ func TestRegexFilter(t *testing.T) {
 			expected: []int{0},
 		},
 		{
-			name:     "Simplified Wildcard",
-			term:     "*.go", // Should match .*.go -> anything ending in .go (if suffix match works)
+			name: "Simplified Wildcard",
+			term: "*.go", // Should match .*.go -> anything ending in .go (if suffix match works)
 			// Actually * at start means .* at start. ".*.go" matches "file.go".
 			expected: []int{0, 1, 2},
 		},

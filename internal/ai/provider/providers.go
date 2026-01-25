@@ -91,7 +91,6 @@ func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMe
 		MaxTokens:   openai.Int(p.maxTokens),
 		Temperature: openai.Float(p.temperature),
 	})
-
 	if err != nil {
 		return "", fmt.Errorf("openai request failed: %w", err)
 	}
@@ -108,11 +107,15 @@ type GeminiProvider struct {
 	apiKey      string
 	maxTokens   int32
 	temperature float32
+	model       string
 }
 
 // NewGeminiProvider creates a new GeminiProvider.
-func NewGeminiProvider(apiKey string, maxTokens int32, temperature float32) *GeminiProvider {
-	return &GeminiProvider{apiKey: apiKey, maxTokens: maxTokens, temperature: temperature}
+func NewGeminiProvider(apiKey string, maxTokens int32, temperature float32, model string) *GeminiProvider {
+	if model == "" {
+		model = "gemini-2.0-flash"
+	}
+	return &GeminiProvider{apiKey: apiKey, maxTokens: maxTokens, temperature: temperature, model: model}
 }
 
 // GenerateContent generates content using Google Gemini.
@@ -140,7 +143,7 @@ func (p *GeminiProvider) GenerateContent(ctx context.Context, systemMessage, use
 	}
 	modelConfig := &genai.GenerateContentConfig{Temperature: &p.temperature, MaxOutputTokens: p.maxTokens}
 
-	resp, err := client.Models.GenerateContent(ctx, "gemini-2.0-flash", contents, modelConfig)
+	resp, err := client.Models.GenerateContent(ctx, p.model, contents, modelConfig)
 	if err != nil {
 		return "", fmt.Errorf("gemini request failed: %w", err)
 	}
@@ -155,11 +158,15 @@ func (p *GeminiProvider) GenerateContent(ctx context.Context, systemMessage, use
 // OllamaProvider implements AIProvider for Ollama.
 type OllamaProvider struct {
 	apiPath string
+	model   string
 }
 
 // NewOllamaProvider creates a new OllamaProvider.
-func NewOllamaProvider(apiPath string) *OllamaProvider {
-	return &OllamaProvider{apiPath: apiPath}
+func NewOllamaProvider(apiPath string, model string) *OllamaProvider {
+	if model == "" {
+		model = "llama3.1:8b"
+	}
+	return &OllamaProvider{apiPath: apiPath, model: model}
 }
 
 // GenerateContent generates content using local Ollama.
@@ -172,7 +179,7 @@ func (p *OllamaProvider) GenerateContent(ctx context.Context, systemMessage, use
 	defer cancel()
 
 	prompt := fmt.Sprintf("%s\n\n%s", systemMessage, userMessage)
-	cmd := exec.CommandContext(tCtx, p.apiPath, "run", "llama3.1:8b", prompt)
+	cmd := exec.CommandContext(tCtx, p.apiPath, "run", p.model, prompt)
 	out, err := cmd.CombinedOutput()
 
 	if errors.Is(tCtx.Err(), context.DeadlineExceeded) {
@@ -210,14 +217,19 @@ type AnthropicProvider struct {
 	apiKey      string
 	maxTokens   int
 	temperature float64
+	model       string
 }
 
 // NewAnthropicProvider creates a new AnthropicProvider.
-func NewAnthropicProvider(apiKey string, maxTokens int, temperature float64) *AnthropicProvider {
+func NewAnthropicProvider(apiKey string, maxTokens int, temperature float64, model string) *AnthropicProvider {
+	if model == "" {
+		model = "claude-3-5-sonnet-20240620"
+	}
 	return &AnthropicProvider{
 		apiKey:      apiKey,
 		maxTokens:   maxTokens,
 		temperature: temperature,
+		model:       model,
 	}
 }
 
@@ -230,7 +242,7 @@ func (p *AnthropicProvider) GenerateContent(ctx context.Context, systemMessage, 
 	client := anthropic.NewClient(option.WithAPIKey(p.apiKey))
 
 	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model: anthropic.Model("claude-3-5-sonnet-20240620"),
+		Model: anthropic.Model(p.model),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(userMessage)),
 		},
@@ -243,7 +255,6 @@ func (p *AnthropicProvider) GenerateContent(ctx context.Context, systemMessage, 
 		MaxTokens:   int64(p.maxTokens),
 		Temperature: anthropic.Float(p.temperature),
 	})
-
 	if err != nil {
 		return "", fmt.Errorf("anthropic request failed: %w", err)
 	}

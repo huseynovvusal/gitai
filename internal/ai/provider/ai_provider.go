@@ -15,13 +15,13 @@ func NewAIProvider(p Provider, cfg Config) (AIProvider, error) {
 	case ProviderGPT:
 		return NewGPTProvider(cfg.APIKey, cfg.BaseUrl, cfg.MaxTokens, cfg.Temperature, cfg.Model), nil
 	case ProviderGemini:
-		return NewGeminiProvider(cfg.APIKey, int32(cfg.MaxTokens), float32(cfg.Temperature)), nil
+		return NewGeminiProvider(cfg.APIKey, int32(cfg.MaxTokens), float32(cfg.Temperature), cfg.Model), nil
 	case ProviderOllama:
-		return NewOllamaProvider(cfg.OllamaPath), nil
+		return NewOllamaProvider(cfg.OllamaPath, cfg.Model), nil
 	case ProvideGeminiCLI:
 		return NewGeminiCLIProvider(), nil
 	case ProviderAnthropic:
-		return NewAnthropicProvider(cfg.APIKey, int(cfg.MaxTokens), cfg.Temperature), nil
+		return NewAnthropicProvider(cfg.APIKey, int(cfg.MaxTokens), cfg.Temperature, cfg.Model), nil
 	case ProviderGroq:
 		baseUrl := cfg.BaseUrl
 		if baseUrl == "" {
