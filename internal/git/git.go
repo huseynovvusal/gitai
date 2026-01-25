@@ -515,3 +515,29 @@ func generateDiffString(path, oldText, newText string, isNew, isDel bool) (resul
 	bld.WriteString(decoded)
 	return bld.String()
 }
+
+func (s *Service) HasRemotes() (bool, error) {
+	ctx, err := s.getRepoContext()
+	if err != nil {
+		return false, err
+	}
+	remotes, err := ctx.repo.Remotes()
+	if err != nil {
+		return false, fmt.Errorf("failed to list remotes: %w", err)
+	}
+	return len(remotes) > 0, nil
+}
+
+func (s *Service) CommitStaged(msg string) error {
+	ctx, err := s.getRepoContext()
+	if err != nil {
+		return err
+	}
+	sig := s.getAuthorSignature(ctx.repo)
+	opts := &git.CommitOptions{Author: sig}
+	_, err = ctx.worktree.Commit(msg, opts)
+	if err != nil {
+		return fmt.Errorf("failed to commit staged changes: %w", err)
+	}
+	return nil
+}

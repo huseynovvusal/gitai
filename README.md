@@ -83,6 +83,18 @@ gitai suggest
 2.  **Add hints**: Optionally provide context (e.g., ticket URL or "fixes login bug").
 3.  **Review**: The AI generates a message. You can **Edit** (`e`), **Regenerate** (`r`), or **Commit** (`c`).
 
+#### Atomic Commits (Experimental)
+Automatically split changes in selected files into multiple atomic commits based on context.
+
+```sh
+gitai suggest --atomic
+```
+
+1.  **Review Plan**: Gitai proposes a sequence of atomic commits.
+2.  **Reorder**: Use `J` (Shift+Down) / `K` (Shift+Up) to reorder commits if needed.
+3.  **Edit**: Press `e` to edit any commit message.
+4.  **Confirm**: Press `c` to apply and commit them sequentially.
+
 #### Targeted Mode
 Skip the file selector by passing specific files or directories directly:
 

@@ -33,6 +33,7 @@ type SuggestConfig struct {
 	NoHint      bool   `mapstructure:"no-hint"`
 	Amend       bool   `mapstructure:"amend"`
 	ForcePush   bool   `mapstructure:"force_push"`
+	Atomic      bool   `mapstructure:"atomic"`
 }
 
 type SecurityConfig struct {

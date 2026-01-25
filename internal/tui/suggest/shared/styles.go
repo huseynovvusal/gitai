@@ -25,4 +25,7 @@ var (
 	SelectedStyle = lipgloss.NewStyle().Bold(true).Background(SelectedBg).Foreground(BaseFg)
 	ErrorStyle    = lipgloss.NewStyle().Foreground(ErrorFg).Bold(true)
 	DocStyle      = lipgloss.NewStyle().Margin(1, 2)
+
+	NormalTextStyle   = lipgloss.NewStyle().Foreground(BaseFg)
+	SelectedTextStyle = SelectedStyle
 )

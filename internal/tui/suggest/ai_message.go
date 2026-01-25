@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -40,11 +39,6 @@ type commitSecurityWarningMsg struct {
 	diff    string
 	status  string
 	version string
-}
-
-type editorFinishedMsg struct {
-	err      error
-	filename string
 }
 
 type State int
@@ -206,57 +200,6 @@ func runPushAsync(ctx context.Context, gs messageGitService, remote string, forc
 	}
 }
 
-func openEditor(content string, editorCmd string) tea.Cmd {
-	f, err := os.CreateTemp("", "gitai-commit-msg-*.txt")
-	if err != nil {
-		return func() tea.Msg { return aiErrorMsg{err: err} }
-	}
-
-	if _, err := f.WriteString(content); err != nil {
-		f.Close()
-		os.Remove(f.Name())
-
-		return func() tea.Msg { return aiErrorMsg{err: err} }
-	}
-
-	f.Close()
-
-	editor := editorCmd
-	if editor == "" || editor == "system" {
-		editor = os.Getenv("EDITOR")
-		if editor == "" {
-			editor = os.Getenv("VISUAL")
-		}
-
-		if editor == "" {
-			editor = "vim"
-		}
-	}
-
-	parts := strings.Fields(editor)
-
-	var c *exec.Cmd
-
-	if len(parts) > 0 {
-		// 1. Make a new slice with enough capacity
-		args := make([]string, 0, len(parts))
-
-		// 2. Copy the existing parts
-		args = append(args, parts[1:]...)
-
-		// 3. Append the new item
-		args = append(args, f.Name())
-
-		c = exec.Command(parts[0], args...)
-	} else {
-		c = exec.Command(editor, f.Name())
-	}
-
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return editorFinishedMsg{err: err, filename: f.Name()}
-	})
-}
-
 func (m *AIMessageModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
@@ -343,7 +286,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					return m, textarea.Blink
 				} else {
-					return m, openEditor(m.commitMessage, m.config.EditorMode)
+					return m, OpenEditor(m.commitMessage, m.config.EditorMode)
 				}
 			}
 		case "r":
@@ -417,17 +360,17 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			return m, nil
 		}
-	case editorFinishedMsg:
-		if msg.err != nil {
+	case EditorFinishedMsg:
+		if msg.Err != nil {
 			m.state = StateError
-			m.errMsg = msg.err.Error()
+			m.errMsg = msg.Err.Error()
 
 			return m, nil
 		}
 
-		content, err := os.ReadFile(filepath.Clean(msg.filename))
+		content, err := os.ReadFile(filepath.Clean(msg.Filename))
 
-		os.Remove(msg.filename)
+		os.Remove(msg.Filename)
 
 		if err != nil {
 

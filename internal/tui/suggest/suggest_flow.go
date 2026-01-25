@@ -34,14 +34,13 @@ type GitCommitter interface {
 	Push(ctx context.Context, remoteName string) (string, error)
 }
 
-// We keep a private combined interface for convenience in Flow but
-// use the smaller ones where appropriate if we were to pass them around.
 type suggestGitService interface {
 	GitRepoStatus
 	GitResolver
 	GitPRGenerator
 	GitDiffStatus
 	GitCommitter
+	AtomicGitService
 	GetLastCommitMessage() (string, error)
 	GetFilesInLastCommit() ([]string, error)
 	GetAmendChangesForFiles(files []string) (string, error)
@@ -63,6 +62,7 @@ type FlowConfig struct {
 	SecurityKeywords []string
 	Amend            bool
 	ForcePush        bool
+	Atomic           bool
 }
 
 func NewFlow(generator ai.CommitMessageGenerator, gs suggestGitService, cfg FlowConfig, hintProcessors ...HintProcessor) *Flow {
@@ -76,13 +76,11 @@ func NewFlow(generator ai.CommitMessageGenerator, gs suggestGitService, cfg Flow
 
 func (s *Flow) WithHint(hint string) *Flow {
 	s.hint = hint
-
 	return s
 }
 
 func (s *Flow) WithSkipHint(skip bool) *Flow {
 	s.skipHint = skip
-
 	return s
 }
 
@@ -126,6 +124,12 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 		}
 	}
 
+	// 3.5 Atomic Flow Divergence
+	if s.config.Atomic {
+		s.runAtomicFlow(ctx, selectedFiles, hint)
+		return
+	}
+
 	// 4. Run AI Generation Flow
 	aiModel := NewAIMessageModel(ctx, selectedFiles, s.generator, s.gitService, MessageConfig{
 		EditorMode:       s.config.EditorMode,
@@ -146,19 +150,32 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 	}
 }
 
+// AtomicGenerator is a local interface to check for GenerateAtomic capability
+type AtomicGenerator interface {
+	GenerateAtomic(ctx context.Context, hunksInput string, hint string) ([]ai.AtomicCommit, error)
+}
+
+func (s *Flow) runAtomicFlow(ctx context.Context, selectedFiles []string, hint string) {
+	gen, ok := s.generator.(AtomicGenerator)
+	if !ok {
+		fmt.Println("Error: The selected AI provider does not support atomic commit generation.")
+		return
+	}
+
+	hasRemotes, _ := s.gitService.HasRemotes()
+	model := NewAtomicModel(ctx, selectedFiles, gen, s.gitService, s.config.EditorMode, hint, hasRemotes)
+	p := tea.NewProgram(&model, tea.WithContext(ctx))
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running atomic flow: %v\n", err)
+	}
+}
+
 // selectFiles determines if we filter arguments or show the UI selector.
 func (s *Flow) selectFiles(availableFiles []string, args []string, preSelected []string) []string {
 	if len(args) > 0 {
-		// Logic extracted here for testability
-		// If args are provided, we ignore preSelected from Amend?
-		// Or should we merge them?
-		// Standard git commit --amend [files] usually ONLY updates [files].
-		// But here we are generating a message for the *result*.
-		// If user provides args, they probably mean "only these files".
 		return s.FilterCompatibleFiles(availableFiles, args)
 	}
 
-	// Fallback to TUI if no args provided
 	fileSelectorModel := NewFileSelectorModel(availableFiles, preSelected...)
 
 	fileSelectorProgram := tea.NewProgram(&fileSelectorModel)

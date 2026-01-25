@@ -17,6 +17,8 @@ func RegisterSuggestFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolP("amend", "a", false, "Amend the previous commit with the selected files and regenerated message")
 	cmd.Flags().BoolP("force", "f", false, "Force push changes (only valid with --amend)")
 
+	cmd.Flags().Bool("atomic", false, "Suggest atomic splits of changes into multiple commits")
+
 	_ = viper.BindPFlag("ai.provider", cmd.Flags().Lookup("provider"))
 	_ = viper.BindPFlag("ai.api_key", cmd.Flags().Lookup("api_key"))
 	_ = viper.BindPFlag("suggest.editor", cmd.Flags().Lookup("editor"))
@@ -26,4 +28,5 @@ func RegisterSuggestFlags(cmd *cobra.Command) {
 	_ = viper.BindPFlag("suggest.no-hint", cmd.Flags().Lookup("no-hint"))
 	_ = viper.BindPFlag("suggest.amend", cmd.Flags().Lookup("amend"))
 	_ = viper.BindPFlag("suggest.force_push", cmd.Flags().Lookup("force"))
+	_ = viper.BindPFlag("suggest.atomic", cmd.Flags().Lookup("atomic"))
 }

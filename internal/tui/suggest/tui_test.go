@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"huseynovvusal/gitai/internal/git"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -19,40 +21,78 @@ func (m *mockGenerator) Generate(ctx context.Context, _, _, _, _ string) (string
 	return m.response, m.err
 }
 
-var _ suggestGitService = (*mockGitService)(nil)
-
-type mockGitService struct {
+// mockMessageService implements ONLY messageGitService interface
+// used by AIMessageModel tests to prove loose coupling.
+type mockMessageService struct {
 	statusResponse  string
-	changedFiles    []string
 	changesResponse string
-	resolveResponse []string
 	commitErr       error
 	pushResponse    string
-	prURL           string
+}
+
+func (m *mockMessageService) GetStatusForFiles(_ []string) (string, error) {
+	return m.statusResponse, nil
+}
+
+func (m *mockMessageService) GetChangesForFiles(_ []string) (string, error) {
+	return m.changesResponse, nil
+}
+
+func (m *mockMessageService) Commit(_ []string, _ string) error {
+	return m.commitErr
+}
+
+func (m *mockMessageService) Push(_ context.Context, _ string) (string, error) {
+	return m.pushResponse, nil
+}
+
+func (m *mockMessageService) GetAmendChangesForFiles(_ []string) (string, error) {
+	return m.changesResponse, nil
+}
+
+func (m *mockMessageService) CommitAmend(_ []string, _ string) error {
+	return m.commitErr
+}
+
+func (m *mockMessageService) PushForce(_ context.Context, _ string) (string, error) {
+	return m.pushResponse, nil
+}
+
+// mockGitService implements the FULL suggestGitService interface
+// used by Flow tests which coordinate multiple components.
+type mockGitService struct {
+	mockMessageService // Embed the message service behavior
+	resolveResponse    []string
+	prURL              string
+	// changedFiles stored here for RepoStatus
+	changedFiles []string
+}
+
+// Ensure mockGitService implements suggestGitService
+var _ suggestGitService = (*mockGitService)(nil)
+
+func (m *mockGitService) GetHunks(files []string) ([]git.DiffHunk, error) {
+	return nil, nil
+}
+
+func (m *mockGitService) ApplyHunks(hunks []git.DiffHunk) error {
+	return nil
+}
+
+func (m *mockGitService) CommitStaged(message string) error {
+	return nil
+}
+
+func (m *mockGitService) HasRemotes() (bool, error) {
+	return true, nil
 }
 
 func (m *mockGitService) GetVersion() (string, error) {
 	return "", nil
 }
 
-func (m *mockGitService) GetStatusForFiles(_ []string) (string, error) {
-	return m.statusResponse, nil
-}
-
 func (m *mockGitService) GetChangedFiles() ([]string, error) {
 	return m.changedFiles, nil
-}
-
-func (m *mockGitService) GetChangesForFiles(_ []string) (string, error) {
-	return m.changesResponse, nil
-}
-
-func (m *mockGitService) Commit(_ []string, _ string) error {
-	return m.commitErr
-}
-
-func (m *mockGitService) Push(_ context.Context, _ string) (string, error) {
-	return m.pushResponse, nil
 }
 
 func (m *mockGitService) ResolvePath(_ string) ([]string, error) {
@@ -69,18 +109,6 @@ func (m *mockGitService) GetLastCommitMessage() (string, error) {
 
 func (m *mockGitService) GetFilesInLastCommit() ([]string, error) {
 	return []string{"prev.go"}, nil
-}
-
-func (m *mockGitService) GetAmendChangesForFiles(_ []string) (string, error) {
-	return m.changesResponse, nil
-}
-
-func (m *mockGitService) CommitAmend(_ []string, _ string) error {
-	return m.commitErr
-}
-
-func (m *mockGitService) PushForce(_ context.Context, _ string) (string, error) {
-	return m.pushResponse, nil
 }
 
 // --- Tests ---
@@ -173,7 +201,8 @@ func TestHintInputModel(t *testing.T) {
 func TestAIMessageModel_States(t *testing.T) {
 	ctx := context.Background()
 	gen := &mockGenerator{response: "feat: add tests"}
-	gs := &mockGitService{}
+	// Use narrow mock here
+	gs := &mockMessageService{}
 	m := NewAIMessageModel(ctx, []string{"test.go"}, gen, gs, MessageConfig{
 		EditorMode:       "builtin",
 		SecurityKeywords: []string{"secret"},
@@ -251,7 +280,8 @@ func TestAIMessageModel_States(t *testing.T) {
 
 func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 	ctx := context.Background()
-	gs := &mockGitService{}
+	// Use narrow mock here
+	gs := &mockMessageService{}
 	m := NewAIMessageModel(ctx, nil, nil, gs, MessageConfig{
 		EditorMode:       "builtin",
 		SecurityKeywords: []string{"secret"},
@@ -301,7 +331,8 @@ func TestAIMessageModel_ErrorsAndSecurity(t *testing.T) {
 
 func TestAIMessageModel_Editing(t *testing.T) {
 	ctx := context.Background()
-	gs := &mockGitService{}
+	// Use narrow mock here
+	gs := &mockMessageService{}
 	m := NewAIMessageModel(ctx, nil, nil, gs, MessageConfig{
 		EditorMode:       "builtin",
 		SecurityKeywords: []string{"secret"},
