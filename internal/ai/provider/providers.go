@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go/v2"
-	"github.com/openai/openai-go/v2/option"
-	"github.com/openai/openai-go/v2/packages/param"
+	openaiOption "github.com/openai/openai-go/v2/option"
 	geminicli "github.com/yubiquita/gemini-cli-wrapper"
 	"google.golang.org/genai"
 )
@@ -26,6 +27,14 @@ func ParseProvider(str string) (Provider, error) {
 		return ProvideGeminiCLI, nil
 	case "ollama", "local":
 		return ProviderOllama, nil
+	case "anthropic", "claude":
+		return ProviderAnthropic, nil
+	case "groq":
+		return ProviderGroq, nil
+	case "deepseek":
+		return ProviderDeepSeek, nil
+	case "xai", "grok":
+		return ProviderXAI, nil
 	default:
 		return ProviderNone, &InvalidProviderError{Provider: str}
 	}
@@ -37,6 +46,7 @@ type GPTProvider struct {
 	baseUrl     string
 	maxTokens   int64
 	temperature float64
+	model       string
 }
 
 // NewGPTProvider creates a new GPTProvider.
@@ -45,12 +55,17 @@ func NewGPTProvider(
 	baseUrl string,
 	maxTokens int64,
 	temperature float64,
+	model string,
 ) *GPTProvider {
+	if model == "" {
+		model = openai.ChatModelGPT4oMini
+	}
 	return &GPTProvider{
 		apiKey:      apiKey,
 		baseUrl:     baseUrl,
 		maxTokens:   maxTokens,
 		temperature: temperature,
+		model:       model,
 	}
 }
 
@@ -59,22 +74,22 @@ func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMe
 	if p.apiKey == "" {
 		return "", ErrAPIKeyNotSet
 	}
-	args := []option.RequestOption{option.WithAPIKey(p.apiKey)}
+	args := []openaiOption.RequestOption{openaiOption.WithAPIKey(p.apiKey)}
 	if p.baseUrl != "" {
-		args = append(args, option.WithBaseURL(p.baseUrl))
+		args = append(args, openaiOption.WithBaseURL(p.baseUrl))
 	}
 	client := openai.NewClient(
 		args...,
 	)
 
 	res, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModelGPT5Mini,
+		Model: openai.ChatModel(p.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemMessage),
 			openai.UserMessage(userMessage),
 		},
-		MaxTokens:   param.NewOpt(p.maxTokens),
-		Temperature: param.NewOpt(p.temperature),
+		MaxTokens:   openai.Int(p.maxTokens),
+		Temperature: openai.Float(p.temperature),
 	})
 
 	if err != nil {
@@ -188,4 +203,54 @@ func (p *GeminiCLIProvider) GenerateContent(_ context.Context, systemMessage, us
 		return "", fmt.Errorf("geminicli execution failed: %w", err)
 	}
 	return resp, nil
+}
+
+// AnthropicProvider implements AIProvider for Anthropic (Claude).
+type AnthropicProvider struct {
+	apiKey      string
+	maxTokens   int
+	temperature float64
+}
+
+// NewAnthropicProvider creates a new AnthropicProvider.
+func NewAnthropicProvider(apiKey string, maxTokens int, temperature float64) *AnthropicProvider {
+	return &AnthropicProvider{
+		apiKey:      apiKey,
+		maxTokens:   maxTokens,
+		temperature: temperature,
+	}
+}
+
+// GenerateContent generates content using Anthropic.
+func (p *AnthropicProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
+	if p.apiKey == "" {
+		return "", ErrAPIKeyNotSet
+	}
+
+	client := anthropic.NewClient(option.WithAPIKey(p.apiKey))
+
+	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model: anthropic.Model("claude-3-5-sonnet-20240620"),
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(userMessage)),
+		},
+		System: []anthropic.TextBlockParam{
+			{
+				Text: systemMessage,
+				Type: "text",
+			},
+		},
+		MaxTokens:   int64(p.maxTokens),
+		Temperature: anthropic.Float(p.temperature),
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("anthropic request failed: %w", err)
+	}
+
+	if len(resp.Content) == 0 {
+		return "", ErrNoResponse
+	}
+
+	return resp.Content[0].Text, nil
 }

@@ -23,7 +23,7 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 - **Smart ticket extraction**: Automatically parses Jira and GitHub issue URLs from hints to format commit headers 🎫
 - **Smart release detection**: Automatically identifies version bumps in files like `VERSION`, `package.json`, `go.mod`, `Cargo.toml`, etc., and formats them as `chore(release)` commits 🚀
 - Conventional Commits: Generates messages following the Conventional Commits specification by default 📝
-- Pluggable AI backends: OpenAI, Google GenAI, Ollama (local)
+- Pluggable AI backends: OpenAI, Anthropic (Claude), Google Gemini, Groq, DeepSeek, XAI (Grok), Ollama (local)
 - **Zero external dependencies**: Built in pure Go (no `git` binary required) ⚙️
 
 ## ⚡️ Quick start
@@ -33,7 +33,11 @@ The project supports multiple AI backends (OpenAI, Google Gemini via genai, and 
 - Go 1.20+ (Go modules are used; CONTRIBUTING recommends Go 1.24+ for development)
 - One of the supported AI providers (optional):
   - OpenAI API key (`OPENAI_API_KEY`)
+  - Anthropic API key (`ANTHROPIC_API_KEY`)
   - Google Gemini API key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
+  - Groq API key (`GROQ_API_KEY`) (uses OpenAI compatible client)
+  - DeepSeek API key (`DEEPSEEK_API_KEY`) (uses OpenAI compatible client)
+  - XAI (Grok) API key (`XAI_API_KEY`) (uses OpenAI compatible client)
   - Ollama binary available and `OLLAMA_API_PATH` set (for local models)
   - Gemini CLI installed (for `geminicli` provider)
 
@@ -101,6 +105,10 @@ You can override the configured AI backend for a single run:
 
 ```sh
 gitai suggest --provider=gpt      # OpenAI
+gitai suggest --provider=anthropic # Anthropic (Claude)
+gitai suggest --provider=groq     # Groq
+gitai suggest --provider=deepseek # DeepSeek
+gitai suggest --provider=xai      # XAI (Grok)
 gitai suggest --provider=ollama   # Local Ollama
 gitai suggest --provider=gemini   # Google Gemini
 ```
@@ -114,7 +122,7 @@ Configuration is managed with Viper and supports CLI flags, environment variable
 ### Documentation
 Detailed configuration guides are available in the [**Project Wiki**](https://github.com/artback/gitai/wiki):
 - [**Configuration Reference**](https://github.com/artback/gitai/wiki/Configuration) (All options & files)
-- [**AI Providers**](https://github.com/artback/gitai/wiki/AI-Providers) (Setup for GPT, Gemini, Ollama)
+- [**AI Providers**](https://github.com/artback/gitai/wiki/AI-Providers) (Setup for GPT, Claude, Groq, DeepSeek, XAI, Gemini, Ollama)
 - [**Customization**](https://github.com/artback/gitai/wiki/Customization) (Editors, styles)
 - [**Security**](https://github.com/artback/gitai/wiki/Security) (Keyword scanner & privacy)
 - [**Internals**](https://github.com/artback/gitai/wiki/Internals) (Architecture & How it works)
@@ -122,7 +130,8 @@ Detailed configuration guides are available in the [**Project Wiki**](https://gi
 ### Quick Example (`gitai.yaml`)
 ```yaml
 ai:
-  provider: gpt     # gpt | gemini | ollama | geminicli
+  provider: gpt     # gpt | anthropic | groq | deepseek | xai | gemini | ollama
+  model: ""         # Optional: specific model (e.g. "claude-3-opus", "llama3-70b")
   temperature: 0.7
 
 suggest:
