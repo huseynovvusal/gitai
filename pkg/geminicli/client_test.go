@@ -1,6 +1,7 @@
 package geminicli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,7 +59,7 @@ func TestExecute(t *testing.T) {
 		}
 
 		// Should get an error about command execution failure
-		if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+		if !errors.Is(err, ErrCommandFailed) {
 			t.Errorf("Expected execution error, got: %v", err)
 		}
 	})
@@ -345,9 +346,7 @@ func TestNewClient(t *testing.T) {
 
 	if client == nil {
 		t.Error("NewClient should return a valid client")
-	}
-
-	if client.timeout != DefaultTimeout {
+	} else if client.timeout != DefaultTimeout {
 		t.Errorf("Expected default timeout %v, got %v", DefaultTimeout, client.timeout)
 	}
 }
@@ -366,9 +365,7 @@ func TestNewClientWithConfig(t *testing.T) {
 
 	if client == nil {
 		t.Error("NewClientWithConfig should return a valid client")
-	}
-
-	if client.timeout != customTimeout {
+	} else if client.timeout != customTimeout {
 		t.Errorf("Expected custom timeout %v, got %v", customTimeout, client.timeout)
 	}
 }
@@ -641,7 +638,7 @@ func TestExecuteWithWorkingDirectory(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	if !errors.Is(err, ErrCommandFailed) {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -664,7 +661,7 @@ func TestWorkingDirectoryFallback(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	if !errors.Is(err, ErrCommandFailed) {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -682,7 +679,7 @@ func TestConvenienceExecuteWithWorkingDirectory(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	if !errors.Is(err, ErrCommandFailed) {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -701,7 +698,7 @@ func TestConvenienceExecuteWithWorkingDirectoryAndTimeout(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	if !errors.Is(err, ErrCommandFailed) {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -721,7 +718,7 @@ func TestConvenienceExecuteWithFullConfig(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	if !errors.Is(err, ErrCommandFailed) {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -790,11 +787,7 @@ func TestResolveRelativePaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := client.resolveRelativePaths(tt.prompt, tt.baseDir)
-
-			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
+			result := client.resolveRelativePaths(tt.prompt, tt.baseDir)
 
 			if result != tt.expected {
 				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
@@ -807,11 +800,7 @@ func TestResolveRelativePaths(t *testing.T) {
 func TestResolveRelativePathsError(t *testing.T) {
 	client := NewClient()
 
-	// Test with empty base directory
-	result, err := client.resolveRelativePaths("./test.txt", "")
-	if err != nil {
-		t.Errorf("Should not error with empty base directory: %v", err)
-	}
+	result := client.resolveRelativePaths("./test.txt", "")
 
 	// Should still process the path
 	if !strings.Contains(result, "test.txt") {
@@ -852,10 +841,7 @@ func TestWorkingDirectoryPathResolution(t *testing.T) {
 	client := NewClientWithConfig(config)
 
 	// Test path resolution
-	result, err := client.resolveRelativePaths("./test.txt", tempDir)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
+	result := client.resolveRelativePaths("./test.txt", tempDir)
 
 	expectedPath := filepath.Join(tempDir, "test.txt")
 	if !strings.Contains(result, expectedPath) {

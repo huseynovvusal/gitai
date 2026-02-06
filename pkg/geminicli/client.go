@@ -2,6 +2,7 @@ package geminicli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,18 +18,20 @@ const (
 	GeminiPromptFlag = "-p"
 	GeminiModelFlag  = "-m"
 	DefaultTimeout   = 30 * time.Second
-	DefaultModel     = "gemini-3-flash"
+	DefaultModel     = "gemini-3-flash-preview"
 	MaxRetries       = 3
+)
 
-	ErrEmptyPrompt        = "prompt cannot be empty"
-	ErrCommandNotFound    = "Gemini command not found in PATH"
-	ErrCommandFailed      = "failed to execute Gemini command"
-	ErrCommandTimeout     = "command timed out"
-	ErrCommandStart       = "failed to start command"
-	ErrParseOutput        = "failed to parse Gemini output"
-	ErrEmptyOutput        = "empty output from Gemini command"
-	ErrAuthFailed         = "authentication error: please check your Gemini API credentials"
-	ErrServiceUnavailable = "service unavailable: Gemini API is currently overloaded or down"
+var (
+	ErrEmptyPrompt        = errors.New("prompt cannot be empty")
+	ErrCommandNotFound    = errors.New("gemini command not found in PATH")
+	ErrCommandFailed      = errors.New("failed to execute Gemini command")
+	ErrCommandTimeout     = errors.New("command timed out")
+	ErrCommandStart       = errors.New("failed to start command")
+	ErrParseOutput        = errors.New("failed to parse Gemini output")
+	ErrEmptyOutput        = errors.New("empty output from Gemini command")
+	ErrAuthFailed         = errors.New("authentication error: please check your Gemini API credentials")
+	ErrServiceUnavailable = errors.New("service unavailable: Gemini API is currently overloaded or down")
 )
 
 // Client represents a Gemini CLI client
@@ -87,7 +90,7 @@ func NewClientWithConfig(config Config) *Client {
 // Execute executes a Gemini command with the given prompt
 func (c *Client) Execute(prompt string) (string, error) {
 	if prompt == "" {
-		return "", fmt.Errorf(ErrEmptyPrompt)
+		return "", ErrEmptyPrompt
 	}
 
 	// Resolve relative paths if the working directory is set
@@ -97,19 +100,12 @@ func (c *Client) Execute(prompt string) (string, error) {
 		if err != nil {
 			c.logger.WarnWith("Failed to get current directory for path resolution", "error", err)
 		} else {
-			resolvedPrompt, err = c.resolveRelativePaths(prompt, currentDir)
-			if err != nil {
-				c.logger.WarnWith("Failed to resolve relative paths", "error", err)
-				resolvedPrompt = prompt // Use original prompt if resolution fails
-			}
+			resolvedPrompt = c.resolveRelativePaths(prompt, currentDir)
 		}
 	}
 
 	// Build command
 	cmdArgs := c.buildGeminiCommandWithModel(resolvedPrompt)
-
-	// Log command execution for debugging
-	c.logger.DebugWith("Executing Gemini command", "command", cmdArgs[0], "args", cmdArgs[1:])
 
 	// Create command with full path to avoid module resolution issues
 	geminiPath, err := exec.LookPath(cmdArgs[0])
@@ -119,16 +115,59 @@ func (c *Client) Execute(prompt string) (string, error) {
 	}
 
 	c.logger.DebugWith("Using gemini path", "path", geminiPath)
-	cmd := exec.Command(geminiPath, cmdArgs[1:]...)
 
-	// Set working directory based on configuration or fallback to current directory
+	var lastErr error
+	for attempt := 0; attempt <= MaxRetries; attempt++ {
+		if attempt > 0 {
+			c.logger.InfoWith("Retrying Gemini command", "attempt", attempt, "max_retries", MaxRetries)
+			// Small backoff
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+
+		// Create a new command for each attempt
+		cmd := exec.Command(geminiPath, cmdArgs[1:]...)
+		c.setupCommandDir(cmd)
+
+		// Execute with timeout
+		output, err := c.runCommandWithTimeout(cmd, c.timeout)
+		if err != nil {
+			lastErr = err
+			if c.isRetryableError(err) && attempt < MaxRetries {
+				c.logger.WarnWith("Retryable error encountered", "error", err, "attempt", attempt)
+				continue
+			}
+			c.logger.ErrorWith("Gemini command execution failed", "error", err)
+			return "", fmt.Errorf("%w: %w", ErrCommandFailed, err)
+		}
+
+		// Parse output
+		result, err := c.parseGeminiOutput(output)
+		if err != nil {
+			lastErr = err
+			if c.isRetryableError(err) && attempt < MaxRetries {
+				c.logger.WarnWith("Retryable error encountered during parsing", "error", err, "attempt", attempt)
+				continue
+			}
+			c.logger.ErrorWith("Failed to parse Gemini output", "error", err, "output_length", len(output))
+			return "", fmt.Errorf("%w: %w", ErrParseOutput, err)
+		}
+
+		c.logger.DebugWith("Gemini command completed successfully", "response_length", len(result))
+		return result, nil
+	}
+
+	return "", fmt.Errorf("failed after %d attempts: %w", MaxRetries+1, lastErr)
+}
+
+// setupCommandDir sets the working directory for the command
+func (c *Client) setupCommandDir(cmd *exec.Cmd) {
 	if c.workingDirectory != "" {
 		cmd.Dir = c.workingDirectory
 		c.logger.DebugWith("Using configured working directory", "dir", cmd.Dir)
 	} else {
 		// Use current working directory as default
-		cmd.Dir, err = os.Getwd()
-		if err != nil || cmd.Dir == "" {
+		currentDir, err := os.Getwd()
+		if err != nil || currentDir == "" {
 			// Fallback to home directory if current directory cannot be determined
 			cmd.Dir = os.Getenv("HOME")
 			if cmd.Dir == "" {
@@ -137,108 +176,37 @@ func (c *Client) Execute(prompt string) (string, error) {
 					cmd.Dir = user.HomeDir
 				}
 			}
+		} else {
+			cmd.Dir = currentDir
 		}
 		c.logger.DebugWith("Using current/default directory", "dir", cmd.Dir)
 	}
+}
 
-	// Execute with timeout
-	output, err := c.runCommandWithTimeout(cmd, c.timeout)
-	if err != nil {
-		c.logger.ErrorWith("Gemini command execution failed", "error", err)
-		return "", fmt.Errorf("%s: %w", ErrCommandFailed, err)
-	}
-
-	// Parse output
-	result, err := c.parseGeminiOutput(output)
-	if err != nil {
-		c.logger.ErrorWith("Failed to parse Gemini output", "error", err, "output_length", len(output))
-		return "", fmt.Errorf("%s: %w", ErrParseOutput, err)
-	}
-
-	c.logger.DebugWith("Gemini command completed successfully", "response_length", len(result))
-	return result, nil
+// isRetryableError determines if an error should trigger a retry
+func (c *Client) isRetryableError(err error) bool {
+	return errors.Is(err, ErrServiceUnavailable)
 }
 
 // ExecuteWithTimeout executes Gemini command with custom timeout
 func (c *Client) ExecuteWithTimeout(prompt string, timeout time.Duration) (string, error) {
 	if prompt == "" {
-		return "", fmt.Errorf(ErrEmptyPrompt)
+		return "", ErrEmptyPrompt
 	}
 
-	// Resolve relative paths if working directory is set
-	resolvedPrompt := prompt
-	if c.workingDirectory != "" {
-		currentDir, err := os.Getwd()
-		if err != nil {
-			c.logger.WarnWith("Failed to get current directory for path resolution", "error", err)
-		} else {
-			resolvedPrompt, err = c.resolveRelativePaths(prompt, currentDir)
-			if err != nil {
-				c.logger.WarnWith("Failed to resolve relative paths", "error", err)
-				resolvedPrompt = prompt // Use original prompt if resolution fails
-			}
-		}
-	}
+	// Temporarily override timeout and use Execute
+	originalTimeout := c.timeout
+	c.timeout = timeout
+	defer func() { c.timeout = originalTimeout }()
 
-	// Build command
-	cmdArgs := c.buildGeminiCommandWithModel(resolvedPrompt)
-
-	// Log command execution for debugging
-	c.logger.DebugWith("Executing Gemini command with timeout", "command", cmdArgs[0], "args", cmdArgs[1:], "timeout", timeout)
-
-	// Create command with full path to avoid module resolution issues
-	geminiPath, err := exec.LookPath(cmdArgs[0])
-	if err != nil {
-		c.logger.ErrorWith("Failed to find gemini command", "error", err)
-		return "", fmt.Errorf("gemini command not found: %w", err)
-	}
-
-	c.logger.DebugWith("Using gemini path", "path", geminiPath)
-	cmd := exec.Command(geminiPath, cmdArgs[1:]...)
-
-	// Set working directory based on configuration or fallback to current directory
-	if c.workingDirectory != "" {
-		cmd.Dir = c.workingDirectory
-		c.logger.DebugWith("Using configured working directory", "dir", cmd.Dir)
-	} else {
-		// Use current working directory as default
-		cmd.Dir, err = os.Getwd()
-		if err != nil || cmd.Dir == "" {
-			// Fallback to home directory if current directory cannot be determined
-			cmd.Dir = os.Getenv("HOME")
-			if cmd.Dir == "" {
-				// Final fallback to current user's home directory
-				if user, err := user.Current(); err == nil {
-					cmd.Dir = user.HomeDir
-				}
-			}
-		}
-		c.logger.DebugWith("Using current/default directory", "dir", cmd.Dir)
-	}
-
-	// Execute with custom timeout
-	output, err := c.runCommandWithTimeout(cmd, timeout)
-	if err != nil {
-		c.logger.ErrorWith("Gemini command execution failed", "error", err)
-		return "", fmt.Errorf("%s: %w", ErrCommandFailed, err)
-	}
-
-	// Parse output
-	result, err := c.parseGeminiOutput(output)
-	if err != nil {
-		c.logger.ErrorWith("Failed to parse Gemini output", "error", err, "output_length", len(output))
-		return "", fmt.Errorf("%s: %w", ErrParseOutput, err)
-	}
-
-	c.logger.DebugWith("Gemini command completed successfully", "response_length", len(result))
-	return result, nil
+	return c.Execute(prompt)
 }
 
 // ValidateAvailable checks if Gemini command is available
 func (c *Client) ValidateAvailable() error {
 	_, err := exec.LookPath(GeminiCommand)
 	if err != nil {
-		return fmt.Errorf("%s: %w", ErrCommandNotFound, err)
+		return fmt.Errorf("%w: %w", ErrCommandNotFound, err)
 	}
 	return nil
 }
@@ -263,7 +231,7 @@ func (c *Client) runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) ([]
 
 	err := cmd.Start()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ErrCommandStart, err)
+		return nil, fmt.Errorf("%w: %w", ErrCommandStart, err)
 	}
 
 	// Channel to signal command completion
@@ -277,20 +245,20 @@ func (c *Client) runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) ([]
 	case err := <-done:
 		if err != nil {
 			// Capture both stdout and stderr for detailed error reporting
-			stdoutStr := strings.TrimSpace(string(stdout.Bytes()))
-			stderrStr := strings.TrimSpace(string(stderr.Bytes()))
+			stdoutStr := strings.TrimSpace(stdout.String())
+			stderrStr := strings.TrimSpace(stderr.String())
 			combined := append(stdout.Bytes(), stderr.Bytes()...)
 
 			// Check if it's an authentication error
 			if c.detectAuthError(combined) {
-				return nil, fmt.Errorf(ErrAuthFailed)
+				return nil, ErrAuthFailed
 			}
 
 			// Check if it's a service unavailable error
 			combinedStr := strings.ToLower(string(combined))
 			if strings.Contains(combinedStr, "service unavailable") ||
 				strings.Contains(combinedStr, "overloaded") {
-				return nil, fmt.Errorf(ErrServiceUnavailable)
+				return nil, ErrServiceUnavailable
 			}
 
 			// Create detailed error message
@@ -310,14 +278,14 @@ func (c *Client) runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) ([]
 		if cmd.Process != nil {
 			cmd.Process.Kill()
 		}
-		return nil, fmt.Errorf("%s after %v", ErrCommandTimeout, timeout)
+		return nil, fmt.Errorf("%w after %v", ErrCommandTimeout, timeout)
 	}
 }
 
 // parseGeminiOutput parses the output from Gemini command
 func (c *Client) parseGeminiOutput(output []byte) (string, error) {
 	if len(output) == 0 {
-		return "", fmt.Errorf(ErrEmptyOutput)
+		return "", ErrEmptyOutput
 	}
 
 	// Convert to string and trim whitespace
@@ -327,7 +295,7 @@ func (c *Client) parseGeminiOutput(output []byte) (string, error) {
 	result = c.filterGeminiOutput(result)
 
 	if result == "" {
-		return "", fmt.Errorf(ErrEmptyOutput)
+		return "", ErrEmptyOutput
 	}
 
 	return result, nil
@@ -405,13 +373,13 @@ func (c *Client) filterGeminiOutput(output string) string {
 }
 
 // resolveRelativePaths resolves relative paths in the prompt to absolute paths
-func (c *Client) resolveRelativePaths(prompt string, baseDir string) (string, error) {
+func (c *Client) resolveRelativePaths(prompt string, baseDir string) string {
 	// Regular expression to match file paths
 	// This pattern matches:
 	// - ./file.txt, ../file.txt (explicit relative paths)
 	// - file.txt, subdir/file.txt (files with common extensions)
 	// - /absolute/path/file.txt (absolute paths, preserved)
-	pathPattern := regexp.MustCompile(`(?:\./|\.\./)[\w\-./]+|[\w\-.\/]*\.(?:txt|md|go|js|py|json|yaml|yml|xml|html|css|sh|conf|cfg|ini|log|out|err|csv|tsv|sql|db|lock|mod|sum|env|toml|proto|pb|rs|c|cpp|h|hpp|java|kt|php|rb|swift|dart|scala|clj|hs|elm|ml|fs|pl|r|m|mm|vue|jsx|tsx|svelte|astro|wasm|zip|tar|gz|bz2|xz|7z|rar|pdf|doc|docx|xls|xlsx|ppt|pptx|png|jpg|jpeg|gif|bmp|svg|webp|ico|mp3|mp4|avi|mov|wmv|flv|mkv|webm|wav|ogg|flac|aac|m4a|ttf|otf|woff|woff2|eot)\b`)
+	pathPattern := regexp.MustCompile(`(?:\./|\.\./)[\w\-./]+|[\w\-./]*\.(?:txt|md|go|js|py|json|yaml|yml|xml|html|css|sh|conf|cfg|ini|log|out|err|csv|tsv|sql|db|lock|mod|sum|env|toml|proto|pb|rs|c|cpp|h|hpp|java|kt|php|rb|swift|dart|scala|clj|hs|elm|ml|fs|pl|r|m|mm|vue|jsx|tsx|svelte|astro|wasm|zip|tar|gz|bz2|xz|7z|rar|pdf|doc|docx|xls|xlsx|ppt|pptx|png|jpg|jpeg|gif|bmp|svg|webp|ico|mp3|mp4|avi|mov|wmv|flv|mkv|webm|wav|ogg|flac|aac|m4a|ttf|otf|woff|woff2|eot)\b`)
 
 	// Replace matches with resolved paths
 	result := pathPattern.ReplaceAllStringFunc(prompt, func(match string) string {
@@ -433,7 +401,7 @@ func (c *Client) resolveRelativePaths(prompt string, baseDir string) (string, er
 		return cleanPath
 	})
 
-	return result, nil
+	return result
 }
 
 // Convenience functions for backward compatibility
