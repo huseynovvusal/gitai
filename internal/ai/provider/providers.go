@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"huseynovvusal/gitai/pkg/geminicli"
 	"os/exec"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go/v2"
 	openaiOption "github.com/openai/openai-go/v2/option"
-	geminicli "github.com/yubiquita/gemini-cli-wrapper"
 	"google.golang.org/genai"
 )
 
@@ -83,7 +83,7 @@ func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMe
 	)
 
 	res, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModel(p.model),
+		Model: p.model,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemMessage),
 			openai.UserMessage(userMessage),

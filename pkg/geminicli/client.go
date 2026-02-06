@@ -12,9 +12,7 @@ import (
 	"time"
 )
 
-// Constants
 const (
-	// Gemini command related
 	GeminiCommand    = "gemini"
 	GeminiPromptFlag = "-p"
 	GeminiModelFlag  = "-m"
@@ -22,7 +20,6 @@ const (
 	DefaultModel     = "gemini-3-flash"
 	MaxRetries       = 3
 
-	// Error messages
 	ErrEmptyPrompt        = "prompt cannot be empty"
 	ErrCommandNotFound    = "Gemini command not found in PATH"
 	ErrCommandFailed      = "failed to execute Gemini command"
@@ -50,7 +47,7 @@ type Config struct {
 	WorkingDirectory string // Working directory for command execution
 }
 
-// NewClient creates a new Gemini CLI client with default configuration
+// NewClient creates a new Gemini CLI client with the default configuration
 func NewClient() *Client {
 	return &Client{
 		logger:  NewNoOpLogger(),
@@ -453,7 +450,7 @@ func ExecuteWithTimeout(prompt string, timeout time.Duration) (string, error) {
 	return client.ExecuteWithTimeout(prompt, timeout)
 }
 
-// ValidateAvailable checks if Gemini command is available using default client
+// ValidateAvailable checks if Gemini command is available using the default client
 func ValidateAvailable() error {
 	client := NewClient()
 	return client.ValidateAvailable()
