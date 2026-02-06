@@ -111,13 +111,13 @@ func TestBuildGeminiCommand(t *testing.T) {
 		{
 			name:           "BasicPrompt",
 			prompt:         "test prompt",
-			expectedLength: 2, // ["gemini", "test prompt"]
+			expectedLength: 3, // ["gemini", "-p", "test prompt"]
 			description:    "Should build basic Gemini command",
 		},
 		{
 			name:           "PromptWithSpaces",
 			prompt:         "test prompt with spaces",
-			expectedLength: 2,
+			expectedLength: 3,
 			description:    "Should handle prompts with spaces",
 		},
 	}
@@ -135,8 +135,12 @@ func TestBuildGeminiCommand(t *testing.T) {
 				t.Errorf("Expected first argument to be 'gemini', got '%s'", cmd[0])
 			}
 
-			if len(cmd) > 1 && cmd[1] != tt.prompt {
-				t.Errorf("Expected second argument to be '%s', got '%s'", tt.prompt, cmd[1])
+			if len(cmd) > 1 && cmd[1] != "-p" {
+				t.Errorf("Expected second argument to be '-p', got '%s'", cmd[1])
+			}
+
+			if len(cmd) > 2 && cmd[2] != tt.prompt {
+				t.Errorf("Expected third argument to be '%s', got '%s'", tt.prompt, cmd[2])
 			}
 		})
 	}
@@ -382,7 +386,7 @@ func TestNoOpLogger(t *testing.T) {
 
 // TestNewClientWithModel tests client creation with model configuration
 func TestNewClientWithModel(t *testing.T) {
-	customModel := "gemini-3-pro"
+	customModel := "gemini-3-pro-preview"
 	config := Config{
 		Model: customModel,
 	}
@@ -409,22 +413,22 @@ func TestBuildGeminiCommandWithModel(t *testing.T) {
 		{
 			name:           "BasicPromptWithModel",
 			prompt:         "test prompt",
-			model:          "gemini-3-flash",
-			expectedLength: 4, // ["gemini", "-m", "gemini-3-flash", "test prompt"]
+			model:          "gemini-3-flash-preview-preview",
+			expectedLength: 5, // ["gemini", "-m", "gemini-3-flash-preview-preview", "-p", "test prompt"]
 			description:    "Should build Gemini command with model",
 		},
 		{
 			name:           "PromptWithCustomModel",
 			prompt:         "test prompt",
-			model:          "gemini-3-pro",
-			expectedLength: 4,
+			model:          "gemini-3-pro-preview-preview",
+			expectedLength: 5,
 			description:    "Should build Gemini command with custom model",
 		},
 		{
 			name:           "PromptWithEmptyModel",
 			prompt:         "test prompt",
 			model:          "",
-			expectedLength: 4, // Should use default model
+			expectedLength: 5, // Should use default model
 			description:    "Should use default model when empty",
 		},
 	}
@@ -452,15 +456,19 @@ func TestBuildGeminiCommandWithModel(t *testing.T) {
 
 			expectedModel := tt.model
 			if expectedModel == "" {
-				expectedModel = "gemini-3-flash" // Default model
+				expectedModel = "gemini-3-flash-preview-preview" // Default model
 			}
 
 			if len(cmd) > 2 && cmd[2] != expectedModel {
 				t.Errorf("Expected third argument to be '%s', got '%s'", expectedModel, cmd[2])
 			}
 
-			if len(cmd) > 3 && cmd[3] != tt.prompt {
-				t.Errorf("Expected fourth argument to be '%s', got '%s'", tt.prompt, cmd[3])
+			if len(cmd) > 3 && cmd[3] != "-p" {
+				t.Errorf("Expected fourth argument to be '-p', got '%s'", cmd[3])
+			}
+
+			if len(cmd) > 4 && cmd[4] != tt.prompt {
+				t.Errorf("Expected fifth argument to be '%s', got '%s'", tt.prompt, cmd[4])
 			}
 		})
 	}
@@ -478,14 +486,14 @@ func TestExecuteWithModel(t *testing.T) {
 		{
 			name:        "EmptyPromptWithModel",
 			prompt:      "",
-			model:       "gemini-3-flash",
+			model:       "gemini-3-flash-preview",
 			expectError: true,
 			description: "Should return error for empty prompt even with model",
 		},
 		{
 			name:        "ValidPromptWithModel",
 			prompt:      "test prompt",
-			model:       "gemini-3-flash",
+			model:       "gemini-3-flash-preview",
 			expectError: false,
 			description: "Should execute with specified model",
 		},
@@ -538,14 +546,14 @@ func TestExecuteWithModelAndTimeout(t *testing.T) {
 		{
 			name:        "EmptyPromptWithModelAndTimeout",
 			prompt:      "",
-			model:       "gemini-3-flash",
+			model:       "gemini-3-flash-preview",
 			expectError: true,
 			description: "Should return error for empty prompt",
 		},
 		{
 			name:        "ValidPromptWithModelAndTimeout",
 			prompt:      "test prompt",
-			model:       "gemini-3-pro",
+			model:       "gemini-3-pro-preview",
 			expectError: false,
 			description: "Should execute with specified model and timeout",
 		},
@@ -577,13 +585,13 @@ func TestExecuteWithModelAndTimeout(t *testing.T) {
 	}
 }
 
-// TestDefaultModel tests that default model is gemini-3-flash
+// TestDefaultModel tests that default model is gemini-3-flash-preview
 func TestDefaultModel(t *testing.T) {
 	client := NewClient()
 
 	// This will fail until we implement the model field
-	// Expected default model should be "gemini-3-flash"
-	expectedDefault := "gemini-3-flash"
+	// Expected default model should be "gemini-3-flash-preview"
+	expectedDefault := "gemini-3-flash-preview"
 
 	// Build command and check if it contains default model
 	cmd := client.buildGeminiCommandWithModel("test")
@@ -701,7 +709,7 @@ func TestConvenienceExecuteWithWorkingDirectoryAndTimeout(t *testing.T) {
 // TestExecuteWithFullConfig tests the convenience function with all configuration options
 func TestConvenienceExecuteWithFullConfig(t *testing.T) {
 	customDir := "/tmp"
-	customModel := "gemini-3-pro"
+	customModel := "gemini-3-pro-preview"
 	timeout := 30 * time.Second
 
 	// This will fail until we implement ExecuteWithFullConfig

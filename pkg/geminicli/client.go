@@ -16,20 +16,21 @@ import (
 const (
 	// Gemini command related
 	GeminiCommand    = "gemini"
+	GeminiPromptFlag = "-p"
 	GeminiModelFlag  = "-m"
 	DefaultTimeout   = 30 * time.Second
 	DefaultModel     = "gemini-3-flash"
 	MaxRetries       = 3
 
 	// Error messages
-	ErrEmptyPrompt     = "prompt cannot be empty"
-	ErrCommandNotFound = "Gemini command not found in PATH"
-	ErrCommandFailed   = "failed to execute Gemini command"
-	ErrCommandTimeout  = "command timed out"
-	ErrCommandStart    = "failed to start command"
-	ErrParseOutput     = "failed to parse Gemini output"
-	ErrEmptyOutput     = "empty output from Gemini command"
-	ErrAuthFailed      = "authentication error: please check your Gemini API credentials"
+	ErrEmptyPrompt        = "prompt cannot be empty"
+	ErrCommandNotFound    = "Gemini command not found in PATH"
+	ErrCommandFailed      = "failed to execute Gemini command"
+	ErrCommandTimeout     = "command timed out"
+	ErrCommandStart       = "failed to start command"
+	ErrParseOutput        = "failed to parse Gemini output"
+	ErrEmptyOutput        = "empty output from Gemini command"
+	ErrAuthFailed         = "authentication error: please check your Gemini API credentials"
 	ErrServiceUnavailable = "service unavailable: Gemini API is currently overloaded or down"
 )
 
@@ -45,7 +46,7 @@ type Client struct {
 type Config struct {
 	Logger           Logger
 	Timeout          time.Duration
-	Model            string // Model name (e.g., "gemini-3-flash", "gemini-3-pro")
+	Model            string // Model name (e.g., "gemini-3-flash-preview", "gemini-3-pro-preview")
 	WorkingDirectory string // Working directory for command execution
 }
 
@@ -92,7 +93,7 @@ func (c *Client) Execute(prompt string) (string, error) {
 		return "", fmt.Errorf(ErrEmptyPrompt)
 	}
 
-	// Resolve relative paths if working directory is set
+	// Resolve relative paths if the working directory is set
 	resolvedPrompt := prompt
 	if c.workingDirectory != "" {
 		currentDir, err := os.Getwd()
@@ -247,12 +248,12 @@ func (c *Client) ValidateAvailable() error {
 
 // buildGeminiCommand builds the command arguments for Gemini
 func (c *Client) buildGeminiCommand(prompt string) []string {
-	return []string{GeminiCommand, prompt}
+	return []string{GeminiCommand, GeminiPromptFlag, prompt}
 }
 
 // buildGeminiCommandWithModel builds the command arguments for Gemini with model specification
 func (c *Client) buildGeminiCommandWithModel(prompt string) []string {
-	return []string{GeminiCommand, GeminiModelFlag, c.model, prompt}
+	return []string{GeminiCommand, GeminiModelFlag, c.model, GeminiPromptFlag, prompt}
 }
 
 // runCommandWithTimeout executes a command with the specified timeout
@@ -290,8 +291,8 @@ func (c *Client) runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) ([]
 
 			// Check if it's a service unavailable error
 			combinedStr := strings.ToLower(string(combined))
-			if strings.Contains(combinedStr, "service unavailable") || 
-			   strings.Contains(combinedStr, "overloaded") {
+			if strings.Contains(combinedStr, "service unavailable") ||
+				strings.Contains(combinedStr, "overloaded") {
 				return nil, fmt.Errorf(ErrServiceUnavailable)
 			}
 
@@ -413,7 +414,7 @@ func (c *Client) resolveRelativePaths(prompt string, baseDir string) (string, er
 	// - ./file.txt, ../file.txt (explicit relative paths)
 	// - file.txt, subdir/file.txt (files with common extensions)
 	// - /absolute/path/file.txt (absolute paths, preserved)
-	pathPattern := regexp.MustCompile(`(?:\./|\.\./)[\w\-\.\/]+|[\w\-\.\/]*\.(?:txt|md|go|js|py|json|yaml|yml|xml|html|css|sh|conf|cfg|ini|log|out|err|csv|tsv|sql|db|lock|mod|sum|env|toml|proto|pb|rs|c|cpp|h|hpp|java|kt|php|rb|swift|dart|scala|clj|hs|elm|ml|fs|pl|r|m|mm|vue|jsx|tsx|svelte|astro|wasm|zip|tar|gz|bz2|xz|7z|rar|pdf|doc|docx|xls|xlsx|ppt|pptx|png|jpg|jpeg|gif|bmp|svg|webp|ico|mp3|mp4|avi|mov|wmv|flv|mkv|webm|wav|ogg|flac|aac|m4a|ttf|otf|woff|woff2|eot)\b`)
+	pathPattern := regexp.MustCompile(`(?:\./|\.\./)[\w\-./]+|[\w\-.\/]*\.(?:txt|md|go|js|py|json|yaml|yml|xml|html|css|sh|conf|cfg|ini|log|out|err|csv|tsv|sql|db|lock|mod|sum|env|toml|proto|pb|rs|c|cpp|h|hpp|java|kt|php|rb|swift|dart|scala|clj|hs|elm|ml|fs|pl|r|m|mm|vue|jsx|tsx|svelte|astro|wasm|zip|tar|gz|bz2|xz|7z|rar|pdf|doc|docx|xls|xlsx|ppt|pptx|png|jpg|jpeg|gif|bmp|svg|webp|ico|mp3|mp4|avi|mov|wmv|flv|mkv|webm|wav|ogg|flac|aac|m4a|ttf|otf|woff|woff2|eot)\b`)
 
 	// Replace matches with resolved paths
 	result := pathPattern.ReplaceAllStringFunc(prompt, func(match string) string {
