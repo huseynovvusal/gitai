@@ -93,6 +93,7 @@ func NewSuggestCmd() *cobra.Command {
 				Amend:            amend,
 				ForcePush:        force,
 				Atomic:           cfg.Suggest.Atomic,
+				Verbose:          cfg.Suggest.Verbose,
 			}
 
 			flow := suggest.NewFlow(service, gitService, flowConfig, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
