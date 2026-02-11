@@ -4,6 +4,8 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/pkoukk/tiktoken-go"
@@ -32,7 +34,7 @@ func TestService_Generate_PropagatesError(t *testing.T) {
 		},
 	}
 
-	service := NewService(mockProvider, "-")
+	service := NewService(mockProvider, "-", "")
 
 	_, _, err := service.Generate(context.Background(), "diff", "status", "", "1.0.0")
 	if err == nil {
@@ -41,6 +43,47 @@ func TestService_Generate_PropagatesError(t *testing.T) {
 
 	if !errors.Is(err, provider.ErrNoResponse) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_Generate_LogsPromptToFile(t *testing.T) {
+	tempFile := t.TempDir() + "/debug_prompt.txt"
+	mockProvider := &MockProvider{
+		GenerateContentFunc: func(ctx context.Context, systemMessage, userMessage string) (string, provider.Usage, error) {
+			return "commit message", provider.Usage{}, nil
+		},
+	}
+
+	service := NewService(mockProvider, "-", tempFile)
+
+	_, _, err := service.Generate(context.Background(), "diff", "status", "hint", "1.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content, err := os.ReadFile(tempFile)
+	if err != nil {
+		t.Fatalf("failed to read debug file: %v", err)
+	}
+
+	if len(content) == 0 {
+		t.Fatalf("debug file is empty")
+	}
+
+	if !strings.Contains(string(content), "SYSTEM PROMPT:") {
+		t.Errorf("debug file does not contain SYSTEM PROMPT")
+	}
+
+	if !strings.Contains(string(content), "USER PROMPT:") {
+		t.Errorf("debug file does not contain USER PROMPT")
+	}
+
+	if !strings.Contains(string(content), "diff") {
+		t.Errorf("debug file does not contain diff")
+	}
+
+	if !strings.Contains(string(content), "hint") {
+		t.Errorf("debug file does not contain hint")
 	}
 }
 

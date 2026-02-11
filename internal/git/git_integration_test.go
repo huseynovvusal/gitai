@@ -225,8 +225,8 @@ func TestGetChangesForFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello"), 0o644)
 
 	diff, _ := gs.GetChangesForFiles([]string{"new.txt"})
-	if !strings.Contains(diff, "new file") {
-		t.Error("expected new file diff")
+	if !strings.Contains(diff, "--- new.txt") {
+		t.Error("expected new file diff with simplified header")
 	}
 
 	w.Add("new.txt")
@@ -239,6 +239,34 @@ func TestGetChangesForFiles(t *testing.T) {
 	diff, _ = gs.GetChangesForFiles([]string{"new.txt"})
 	if !strings.Contains(diff, "hello") || !strings.Contains(diff, "world") {
 		t.Errorf("diff missing expected content: %s", diff)
+	}
+}
+
+func TestGetChangesForFiles_IgnoresNoiseFiles(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	defer os.RemoveAll(dir)
+
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+
+	os.Chdir(dir)
+
+	gs := NewService()
+
+	os.WriteFile(filepath.Join(dir, "go.sum"), []byte("noise"), 0o644)
+	os.WriteFile(filepath.Join(dir, "real_change.txt"), []byte("important"), 0o644)
+
+	diff, err := gs.GetChangesForFiles([]string{"go.sum", "real_change.txt"})
+	if err != nil {
+		t.Fatalf("GetChangesForFiles failed: %v", err)
+	}
+
+	if strings.Contains(diff, "go.sum") {
+		t.Error("expected go.sum to be ignored in diff")
+	}
+
+	if !strings.Contains(diff, "real_change.txt") {
+		t.Error("expected real_change.txt to be included in diff")
 	}
 }
 

@@ -75,7 +75,7 @@ func NewSuggestCmd() *cobra.Command {
 				return
 			}
 
-			service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint)
+			service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint, cfg.AI.DebugFile)
 
 			gitService := git.NewService()
 

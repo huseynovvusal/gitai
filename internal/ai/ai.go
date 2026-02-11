@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/cleaner"
@@ -17,13 +18,15 @@ type CommitMessageGenerator interface {
 type Service struct {
 	provider    provider.AIProvider
 	bulletPoint string
+	debugFile   string
 }
 
 // NewService creates a new Service.
-func NewService(provider provider.AIProvider, bulletPoint string) *Service {
+func NewService(provider provider.AIProvider, bulletPoint string, debugFile string) *Service {
 	return &Service{
 		provider:    provider,
 		bulletPoint: bulletPoint,
+		debugFile:   debugFile,
 	}
 }
 
@@ -40,6 +43,11 @@ func (s *Service) Generate(ctx context.Context, diff string, status string, hint
 
 	userMessage = compressWhitespace(userMessage)
 	systemMessage = compressWhitespace(systemMessage)
+
+	if s.debugFile != "" {
+		debugContent := fmt.Sprintf("SYSTEM PROMPT:\n%s\n\nUSER PROMPT:\n%s\n", systemMessage, userMessage)
+		_ = os.WriteFile(s.debugFile, []byte(debugContent), 0644)
+	}
 
 	msg, usage, err := s.provider.GenerateContent(ctx, systemMessage, userMessage)
 	if err != nil {

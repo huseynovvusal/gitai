@@ -126,7 +126,7 @@ func TestGenerateDiffString(t *testing.T) {
 			"package main",
 			true,
 			false,
-			[]string{"diff --git a/main.go b/main.go", "new file mode 100644", "+++ b/main.go", "package main"},
+			[]string{"--- main.go", "package main"},
 		},
 		{
 			"Modified File",
@@ -135,7 +135,7 @@ func TestGenerateDiffString(t *testing.T) {
 			"Hello World",
 			false,
 			false,
-			[]string{"diff --git a/README.md b/README.md", "--- a/README.md", "+++ b/README.md", "Hello", "World"},
+			[]string{"--- README.md", "Hello", "World"},
 		},
 		{
 			"Deleted File",
@@ -144,7 +144,7 @@ func TestGenerateDiffString(t *testing.T) {
 			"",
 			false,
 			true,
-			[]string{"diff --git a/old.txt b/old.txt", "deleted file mode 100644", "--- a/old.txt", "+++ /dev/null"},
+			[]string{"--- old.txt", "content"},
 		},
 	}
 

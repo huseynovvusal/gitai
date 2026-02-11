@@ -24,6 +24,7 @@ type AIConfig struct {
 	BaseUrl     string  `mapstructure:"base_url"`
 	Temperature float64 `mapstructure:"temperature"`
 	MaxTokens   int64   `mapstructure:"max_tokens"`
+	DebugFile   string  `mapstructure:"debug_file"`
 }
 
 type SuggestConfig struct {

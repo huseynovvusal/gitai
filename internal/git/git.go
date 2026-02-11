@@ -29,6 +29,19 @@ const (
 
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
+var ignoredFiles = map[string]bool{
+	"go.sum":            true,
+	"package-lock.json": true,
+	"yarn.lock":         true,
+	"pnpm-lock.yaml":    true,
+	"composer.lock":     true,
+	"Cargo.lock":        true,
+	"Gemfile.lock":      true,
+	"mix.lock":          true,
+	"poetry.lock":       true,
+	"uv.lock":           true,
+}
+
 type Service struct{}
 
 func NewService() *Service {
@@ -265,6 +278,9 @@ func (s *Service) generateBatchDiff(files []string, oldTree *object.Tree, root s
 	var b strings.Builder
 	for _, p := range files {
 		rel, _ := s.toRel(p, root)
+		if ignoredFiles[filepath.Base(rel)] {
+			continue
+		}
 		diff := s.diffFile(rel, p, oldTree)
 		b.WriteString(diff)
 	}
@@ -501,16 +517,7 @@ func generateDiffString(path, oldText, newText string, isNew, isDel bool) (resul
 	decoded, _ := url.PathUnescape(dmp.PatchToText(patches))
 
 	var bld strings.Builder
-	bld.WriteString(fmt.Sprintf("diff --git a/%s b/%s\n", path, path))
-
-	switch {
-	case isNew:
-		bld.WriteString(fmt.Sprintf("new file mode 100644\n--- /dev/null\n+++ b/%s\n", path))
-	case isDel:
-		bld.WriteString(fmt.Sprintf("deleted file mode 100644\n--- a/%s\n+++ /dev/null\n", path))
-	default:
-		bld.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", path, path))
-	}
+	bld.WriteString(fmt.Sprintf("--- %s\n", path))
 
 	bld.WriteString(decoded)
 	return bld.String()
