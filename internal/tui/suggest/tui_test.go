@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/git"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,8 +18,8 @@ type mockGenerator struct {
 	err      error
 }
 
-func (m *mockGenerator) Generate(ctx context.Context, _, _, _, _ string) (string, error) {
-	return m.response, m.err
+func (m *mockGenerator) Generate(ctx context.Context, _, _, _, _ string) (string, provider.Usage, error) {
+	return m.response, provider.Usage{}, m.err
 }
 
 // mockMessageService implements ONLY messageGitService interface
@@ -218,11 +219,11 @@ func TestAIMessageModel_States(t *testing.T) {
 	}
 
 	// 2. Receive AI response
-	m2, _ := m.Update(aiDoneMsg{message: "feat: add tests"})
+	m2, _ := m.Update(aiDoneMsg{message: "feat: add tests", usage: provider.Usage{TotalTokens: 10}})
 
 	m = *m2.(*AIMessageModel)
-	if m.state != StateGenerated || m.commitMessage != "feat: add tests" {
-		t.Errorf("state mismatch after aiDoneMsg: %v", m.state)
+	if m.state != StateGenerated || m.commitMessage != "feat: add tests" || m.usage.TotalTokens != 10 {
+		t.Errorf("state/usage mismatch after aiDoneMsg: %v, tokens=%d", m.state, m.usage.TotalTokens)
 	}
 
 	if !strings.Contains(m.View(), "AI commit message suggestion") {

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
 )
@@ -29,7 +30,10 @@ const (
 )
 
 type (
-	atomicPlanMsg []ai.AtomicCommit
+	atomicPlanMsg struct {
+		commits []ai.AtomicCommit
+		usage   provider.Usage
+	}
 	atomicExecMsg struct{ err error }
 	atomicPushMsg struct {
 		err    error
@@ -63,9 +67,11 @@ type AtomicModel struct {
 	hunksString string
 	pushOutput  string
 	hasRemotes  bool
+	verbose     bool
+	usage       provider.Usage
 }
 
-func NewAtomicModel(ctx context.Context, files []string, generator AtomicGenerator, gs AtomicGitService, editorMode, hint string, hasRemotes bool) AtomicModel {
+func NewAtomicModel(ctx context.Context, files []string, generator AtomicGenerator, gs AtomicGitService, editorMode, hint string, hasRemotes bool, verbose bool) AtomicModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
@@ -87,6 +93,7 @@ func NewAtomicModel(ctx context.Context, files []string, generator AtomicGenerat
 		textArea:   ta,
 		editorMode: editorMode,
 		hasRemotes: hasRemotes,
+		verbose:    verbose,
 	}
 }
 
@@ -106,11 +113,11 @@ func (m *AtomicModel) fetchHunksCmd() tea.Cmd {
 
 func (m *AtomicModel) generatePlanCmd() tea.Cmd {
 	return func() tea.Msg {
-		commits, err := m.generator.GenerateAtomic(m.ctx, m.hunksString, m.hint)
+		commits, usage, err := m.generator.GenerateAtomic(m.ctx, m.hunksString, m.hint)
 		if err != nil {
 			return atomicExecMsg{err: err}
 		}
-		return atomicPlanMsg(commits)
+		return atomicPlanMsg{commits: commits, usage: usage}
 	}
 }
 
@@ -232,7 +239,8 @@ func (m *AtomicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.generatePlanCmd()
 
 	case atomicPlanMsg:
-		m.commits = msg
+		m.commits = msg.commits
+		m.usage = msg.usage
 		m.state = AtomicStateReviewing
 		m.cursor = 0
 		return m, nil
@@ -324,6 +332,13 @@ func (m *AtomicModel) View() string {
 			}
 			b.WriteString("\n")
 		}
+
+		if m.verbose && m.usage.TotalTokens > 0 {
+			usageStr := fmt.Sprintf("Tokens: %d (prompt) + %d (completion) = %d (total)\n",
+				m.usage.PromptTokens, m.usage.CompletionTokens, m.usage.TotalTokens)
+			b.WriteString(shared.DimStyle.Render(usageStr) + "\n")
+		}
+
 		b.WriteString("\n[e] Edit   [J/K] Move Up/Down   [r] Regenerate   [c] Confirm & Apply   [q] Quit\n")
 	}
 

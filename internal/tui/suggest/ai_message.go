@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/security"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
@@ -19,6 +20,7 @@ import (
 type aiDoneMsg struct {
 	message string
 	version string
+	usage   provider.Usage
 }
 
 type aiErrorMsg struct {
@@ -80,6 +82,7 @@ type AIMessageModel struct {
 	textArea      textarea.Model
 	hint          string
 	pushOutput    string
+	usage         provider.Usage
 }
 
 type MessageConfig struct {
@@ -87,6 +90,7 @@ type MessageConfig struct {
 	SecurityKeywords []string
 	Amend            bool
 	ForcePush        bool
+	Verbose          bool
 }
 
 func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, gs messageGitService, cfg MessageConfig, hint string) AIMessageModel {
@@ -151,12 +155,12 @@ func runAIAsync(p runAIParams) tea.Cmd {
 			return commitSecurityWarningMsg{err: err, diff: diff, status: status, version: version}
 		}
 
-		commitMessage, err := p.generator.Generate(p.ctx, diff, status, p.hint, version)
+		commitMessage, usage, err := p.generator.Generate(p.ctx, diff, status, p.hint, version)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		return aiDoneMsg{message: commitMessage, version: version}
+		return aiDoneMsg{message: commitMessage, version: version, usage: usage}
 	}
 }
 
@@ -164,12 +168,12 @@ func runAIAsync(p runAIParams) tea.Cmd {
 // previously saved diff/status after the user confirmed the warning.
 func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessageGenerator, diff, status, hint, version string) tea.Cmd {
 	return func() tea.Msg {
-		commitMessage, err := generator.Generate(ctx, diff, status, hint, version)
+		commitMessage, usage, err := generator.Generate(ctx, diff, status, hint, version)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		return aiDoneMsg{message: commitMessage, version: version}
+		return aiDoneMsg{message: commitMessage, version: version, usage: usage}
 	}
 }
 
@@ -314,6 +318,7 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case aiDoneMsg:
 		m.commitMessage = msg.message
 		m.savedVersion = msg.version
+		m.usage = msg.usage
 		m.state = StateGenerated
 
 		return m, nil
@@ -450,6 +455,13 @@ func (m *AIMessageModel) View() string {
 		header := shared.HeaderStyle.Render("AI commit message suggestion:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
+
+		if m.config.Verbose && m.usage.TotalTokens > 0 {
+			usageStr := fmt.Sprintf("\nTokens: %d (prompt) + %d (completion) = %d (total)",
+				m.usage.PromptTokens, m.usage.CompletionTokens, m.usage.TotalTokens)
+			b.WriteString(shared.DimStyle.Render(usageStr) + "\n")
+		}
+
 		b.WriteString("\n[e] Edit   [r] Regenerate   [c] Commit   [x] Cancel\n")
 
 		return b.String()

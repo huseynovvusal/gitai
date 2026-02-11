@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"huseynovvusal/gitai/internal/ai/provider"
 	"strings"
 )
 
@@ -35,7 +36,7 @@ Rules:
 5. If a hint is provided, prioritize it for context, but still ensure atomicity.`
 
 // GenerateAtomic generates a list of atomic commits from the provided hunks string.
-func (s *Service) GenerateAtomic(ctx context.Context, hunksInput string, hint string) ([]AtomicCommit, error) {
+func (s *Service) GenerateAtomic(ctx context.Context, hunksInput string, hint string) ([]AtomicCommit, provider.Usage, error) {
 	userMessage := "Hunks:\n" + hunksInput
 	if hint != "" {
 		userMessage += "\n\nUser hint: " + hint
@@ -43,9 +44,9 @@ func (s *Service) GenerateAtomic(ctx context.Context, hunksInput string, hint st
 
 	// We do not compress whitespace here because hunks contain code where whitespace is significant.
 
-	resp, err := s.provider.GenerateContent(ctx, atomicSystemPrompt, userMessage)
+	resp, usage, err := s.provider.GenerateContent(ctx, atomicSystemPrompt, userMessage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate atomic plan: %w", err)
+		return nil, provider.Usage{}, fmt.Errorf("failed to generate atomic plan: %w", err)
 	}
 
 	// Clean markdown code blocks if present
@@ -61,8 +62,8 @@ func (s *Service) GenerateAtomic(ctx context.Context, hunksInput string, hint st
 
 	var commits []AtomicCommit
 	if err := json.Unmarshal([]byte(cleanResp), &commits); err != nil {
-		return nil, fmt.Errorf("failed to parse AI response: %w\nResponse: %s", err, resp)
+		return nil, usage, fmt.Errorf("failed to parse AI response: %w\nResponse: %s", err, resp)
 	}
 
-	return commits, nil
+	return commits, usage, nil
 }

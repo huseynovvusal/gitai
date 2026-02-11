@@ -13,28 +13,28 @@ import (
 
 // MockProvider is a mock implementation of AIProvider.
 type MockProvider struct {
-	GenerateContentFunc func(ctx context.Context, systemMessage, userMessage string) (string, error)
+	GenerateContentFunc func(ctx context.Context, systemMessage, userMessage string) (string, provider.Usage, error)
 }
 
-func (m *MockProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
+func (m *MockProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, provider.Usage, error) {
 	if m.GenerateContentFunc != nil {
 		return m.GenerateContentFunc(ctx, systemMessage, userMessage)
 	}
 
-	return "", nil
+	return "", provider.Usage{}, nil
 }
 
 // Test that errors from provider propagate (e.g., ErrNoResponse).
 func TestService_Generate_PropagatesError(t *testing.T) {
 	mockProvider := &MockProvider{
-		GenerateContentFunc: func(ctx context.Context, systemMessage, userMessage string) (string, error) {
-			return "", provider.ErrNoResponse
+		GenerateContentFunc: func(ctx context.Context, systemMessage, userMessage string) (string, provider.Usage, error) {
+			return "", provider.Usage{}, provider.ErrNoResponse
 		},
 	}
 
 	service := NewService(mockProvider, "-")
 
-	_, err := service.Generate(context.Background(), "diff", "status", "", "1.0.0")
+	_, _, err := service.Generate(context.Background(), "diff", "status", "", "1.0.0")
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}

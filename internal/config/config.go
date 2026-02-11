@@ -34,6 +34,7 @@ type SuggestConfig struct {
 	Amend       bool   `mapstructure:"amend"`
 	ForcePush   bool   `mapstructure:"force_push"`
 	Atomic      bool   `mapstructure:"atomic"`
+	Verbose     bool   `mapstructure:"verbose"`
 }
 
 type SecurityConfig struct {

@@ -25,6 +25,7 @@ var (
 	SelectedStyle = lipgloss.NewStyle().Bold(true).Background(SelectedBg).Foreground(BaseFg)
 	ErrorStyle    = lipgloss.NewStyle().Foreground(ErrorFg).Bold(true)
 	DocStyle      = lipgloss.NewStyle().Margin(1, 2)
+	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#909090", Dark: "#6272a4"})
 
 	NormalTextStyle   = lipgloss.NewStyle().Foreground(BaseFg)
 	SelectedTextStyle = SelectedStyle
