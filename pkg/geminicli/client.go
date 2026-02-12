@@ -17,6 +17,8 @@ const (
 	GeminiCommand    = "gemini"
 	GeminiPromptFlag = "-p"
 	GeminiModelFlag  = "-m"
+	GeminiResumeFlag = "-r"
+	GeminiResumeValue = "latest"
 	DefaultModel     = "gemini-3-flash-preview"
 	MaxRetries       = 3
 )
@@ -111,8 +113,13 @@ func (c *Client) ExecuteDetailed(ctx context.Context, prompt string) (*DetailedR
 		}
 	}
 
-	// Use JSON output format to get stats
-	cmdArgs := []string{GeminiModelFlag, c.model, "-o", "json", GeminiPromptFlag, resolvedPrompt}
+	// Use JSON output format to get stats and resume latest session to save tokens
+	cmdArgs := []string{
+		GeminiModelFlag, c.model,
+		GeminiResumeFlag, GeminiResumeValue,
+		"-o", "json",
+		GeminiPromptFlag, resolvedPrompt,
+	}
 	var detailedResp *DetailedResponse
 
 	retryer := &Retryer{
