@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -41,6 +42,8 @@ var ignoredFiles = map[string]bool{
 	"poetry.lock":       true,
 	"uv.lock":           true,
 }
+
+var hunkHeaderRegex = regexp.MustCompile(`(?m)^@@\s.*\s@@\n`)
 
 type Service struct{}
 
@@ -515,6 +518,7 @@ func generateDiffString(path, oldText, newText string, isNew, isDel bool) (resul
 
 	patches := dmp.PatchMake(diffs)
 	decoded, _ := url.PathUnescape(dmp.PatchToText(patches))
+	decoded = hunkHeaderRegex.ReplaceAllString(decoded, "")
 
 	var bld strings.Builder
 	bld.WriteString(fmt.Sprintf("--- %s\n", path))
