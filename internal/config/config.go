@@ -24,6 +24,8 @@ type AIConfig struct {
 	BaseUrl     string  `mapstructure:"base_url"`
 	Temperature float64 `mapstructure:"temperature"`
 	MaxTokens   int64   `mapstructure:"max_tokens"`
+	DebugFile   string  `mapstructure:"debug_file"`
+	NoSession   bool    `mapstructure:"no_session"`
 }
 
 type SuggestConfig struct {
@@ -34,6 +36,7 @@ type SuggestConfig struct {
 	Amend       bool   `mapstructure:"amend"`
 	ForcePush   bool   `mapstructure:"force_push"`
 	Atomic      bool   `mapstructure:"atomic"`
+	Verbose     bool   `mapstructure:"verbose"`
 }
 
 type SecurityConfig struct {

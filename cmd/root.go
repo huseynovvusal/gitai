@@ -15,6 +15,7 @@ func Execute(version string) {
 		Long:    `Gitai allows you to perform various Git operations with the help of AI, making version control easier and more intuitive.`,
 	}
 	rootCmd.AddCommand(NewSuggestCmd())
+	rootCmd.AddCommand(NewConfigCmd())
 	err := rootCmd.Execute()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

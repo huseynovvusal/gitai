@@ -11,6 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/ai/provider"
+	"huseynovvusal/gitai/internal/cleaner"
 	"huseynovvusal/gitai/internal/git"
 	"huseynovvusal/gitai/internal/security"
 	"huseynovvusal/gitai/internal/tui/suggest/shared"
@@ -19,6 +21,20 @@ import (
 type aiDoneMsg struct {
 	message string
 	version string
+	usage   provider.Usage
+}
+
+type aiTokenMsg struct {
+	token   string
+	version string
+}
+
+type aiStreamDoneMsg struct {
+	version string
+}
+
+type aiUsageMsg struct {
+	usage provider.Usage
 }
 
 type aiErrorMsg struct {
@@ -38,6 +54,15 @@ type commitSecurityWarningMsg struct {
 	err     error
 	diff    string
 	status  string
+	version string
+}
+
+type startStreamMsg struct {
+	params runAIParams
+}
+
+type streamMsg struct {
+	stream  <-chan provider.StreamResult
 	version string
 }
 
@@ -80,6 +105,8 @@ type AIMessageModel struct {
 	textArea      textarea.Model
 	hint          string
 	pushOutput    string
+	usage         provider.Usage
+	bulletPoint   string
 }
 
 type MessageConfig struct {
@@ -87,6 +114,8 @@ type MessageConfig struct {
 	SecurityKeywords []string
 	Amend            bool
 	ForcePush        bool
+	Verbose          bool
+	BulletPoint      string
 }
 
 func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitMessageGenerator, gs messageGitService, cfg MessageConfig, hint string) AIMessageModel {
@@ -113,6 +142,7 @@ func NewAIMessageModel(ctx context.Context, files []string, generator ai.CommitM
 		config:        cfg,
 		textArea:      ta,
 		hint:          hint,
+		bulletPoint:   cfg.BulletPoint,
 	}
 }
 
@@ -126,7 +156,7 @@ type runAIParams struct {
 	amend            bool
 }
 
-func runAIAsync(p runAIParams) tea.Cmd {
+func runAIStreamAsync(p runAIParams) tea.Cmd {
 	return func() tea.Msg {
 		var diff string
 		var err error
@@ -151,25 +181,54 @@ func runAIAsync(p runAIParams) tea.Cmd {
 			return commitSecurityWarningMsg{err: err, diff: diff, status: status, version: version}
 		}
 
-		commitMessage, err := p.generator.Generate(p.ctx, diff, status, p.hint, version)
+		stream, err := p.generator.Stream(p.ctx, diff, status, p.hint, version)
 		if err != nil {
-			return aiErrorMsg{err: err}
+			// Fallback to non-stream if streaming fails
+			msg, usage, err := p.generator.Generate(p.ctx, diff, status, p.hint, version)
+			if err != nil {
+				return aiErrorMsg{err: err}
+			}
+			return aiDoneMsg{message: msg, version: version, usage: usage}
 		}
 
-		return aiDoneMsg{message: commitMessage, version: version}
+		return streamMsg{stream: stream, version: version}
 	}
 }
 
-// runGenerateAfterWarningAsync resumes commit message generation using the
-// previously saved diff/status after the user confirmed the warning.
+func readStream(stream <-chan provider.StreamResult, version string) tea.Cmd {
+	return func() tea.Msg {
+		res, ok := <-stream
+		if !ok {
+			return aiStreamDoneMsg{version: version}
+		}
+		if res.Err != nil {
+			return aiErrorMsg{err: res.Err}
+		}
+		if res.Token != "" {
+			return aiTokenMsg{token: res.Token, version: version}
+		}
+		if res.Usage.TotalTokens > 0 {
+			return aiUsageMsg{usage: res.Usage}
+		}
+		// If we get an empty result but channel is not closed, keep reading.
+		return readStream(stream, version)()
+	}
+}
+
+func runAIAsync(p runAIParams) tea.Cmd {
+	return func() tea.Msg {
+		return startStreamMsg{params: p}
+	}
+}
+
 func runGenerateAfterWarningAsync(ctx context.Context, generator ai.CommitMessageGenerator, diff, status, hint, version string) tea.Cmd {
 	return func() tea.Msg {
-		commitMessage, err := generator.Generate(ctx, diff, status, hint, version)
+		commitMessage, usage, err := generator.Generate(ctx, diff, status, hint, version)
 		if err != nil {
 			return aiErrorMsg{err: err}
 		}
 
-		return aiDoneMsg{message: commitMessage, version: version}
+		return aiDoneMsg{message: commitMessage, version: version, usage: usage}
 	}
 }
 
@@ -216,26 +275,20 @@ func (m *AIMessageModel) Init() tea.Cmd {
 }
 
 func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle internal editor state
 	if m.state == StateEditing {
 		if msg, ok := msg.(tea.KeyMsg); ok {
 			switch msg.String() {
 			case "esc":
 				m.state = StateGenerated
-
 				return m, nil
 			case "ctrl+s":
 				m.commitMessage = m.textArea.Value()
 				m.state = StateGenerated
-
 				return m, nil
 			}
 		}
-
 		var cmd tea.Cmd
-
 		m.textArea, cmd = m.textArea.Update(msg)
-
 		return m, cmd
 	}
 
@@ -246,35 +299,29 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "x":
 			m.cancel = true
-
 			return m, tea.Quit
 		case "y", "enter":
 			if m.state == StateSecurityWarning {
 				m.state = StateGenerating
 				m.errMsg = ""
-
 				return m, runGenerateAfterWarningAsync(m.ctx, m.generator, m.savedDiff, m.savedStatus, m.hint, m.savedVersion)
 			}
 		case "n":
 			if m.state == StateSecurityWarning {
 				m.state = StateError
 				m.errMsg = "Commit cancelled by user due to security findings"
-
 				return m, nil
 			}
 		case "c":
 			if m.state == StateGenerated && m.commitMessage != "" {
 				m.state = StateCommitting
 				m.errMsg = ""
-
 				return m, tea.Batch(m.spinner.Tick, runCommitAsync(m.gitService, m.files, m.commitMessage, m.config.Amend))
 			}
 		case "p":
-			// allow pushing only when we've committed
 			if m.state == StateCommitted {
 				m.state = StatePushing
 				m.errMsg = ""
-
 				return m, tea.Batch(m.spinner.Tick, runPushAsync(m.ctx, m.gitService, "origin", m.config.ForcePush))
 			}
 		case "e":
@@ -283,7 +330,6 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = StateEditing
 					m.textArea.SetValue(m.commitMessage)
 					m.textArea.Focus()
-
 					return m, textarea.Blink
 				} else {
 					return m, OpenEditor(m.commitMessage, m.config.EditorMode)
@@ -291,9 +337,9 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "r":
 			if m.state == StateGenerated {
+				m.commitMessage = ""
 				m.state = StateGenerating
 				m.errMsg = ""
-
 				return m, tea.Batch(m.spinner.Tick, runAIAsync(runAIParams{
 					ctx:              m.ctx,
 					generator:        m.generator,
@@ -306,84 +352,85 @@ func (m *AIMessageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
-
 		m.spinner, cmd = m.spinner.Update(msg)
-
 		return m, cmd
+
+	case startStreamMsg:
+		return m, runAIStreamAsync(msg.params)
+
+	case streamMsg:
+		return m, readStream(msg.stream, msg.version)
+
+	case aiTokenMsg:
+		m.commitMessage += msg.token
+		return m, nil
+
+	case aiStreamDoneMsg:
+		m.commitMessage = cleaner.CleanCommitMessage(m.commitMessage, m.bulletPoint)
+		m.state = StateGenerated
+		return m, nil
+
+	case aiUsageMsg:
+		m.usage = msg.usage
+		return m, nil
 
 	case aiDoneMsg:
 		m.commitMessage = msg.message
 		m.savedVersion = msg.version
+		m.usage = msg.usage
 		m.state = StateGenerated
-
 		return m, nil
 
 	case aiErrorMsg:
 		m.state = StateError
 		m.errMsg = msg.err.Error()
-
 		return m, nil
+
 	case commitResultMsg:
 		if msg.err != nil {
 			m.state = StateError
 			m.errMsg = msg.err.Error()
-
 			return m, nil
 		}
-
 		m.state = StateCommitted
 		m.errMsg = ""
-
 		return m, nil
 
 	case pushResultMsg:
 		if msg.err != nil {
 			m.state = StateError
 			m.errMsg = msg.err.Error()
-
 			return m, nil
 		}
-
 		m.state = StatePushed
 		m.pushOutput = msg.output
 		m.errMsg = ""
-
 		return m, tea.Quit
+
 	case commitSecurityWarningMsg:
 		if msg.err != nil {
-			// save context so we can resume generation if the user confirms
 			m.savedDiff = msg.diff
 			m.savedStatus = msg.status
 			m.savedVersion = msg.version
 			m.state = StateSecurityWarning
 			m.errMsg = msg.err.Error()
-
 			return m, nil
 		}
+
 	case EditorFinishedMsg:
 		if msg.Err != nil {
 			m.state = StateError
 			m.errMsg = msg.Err.Error()
-
 			return m, nil
 		}
-
 		content, err := os.ReadFile(filepath.Clean(msg.Filename))
-
 		os.Remove(msg.Filename)
-
 		if err != nil {
-
 			m.state = StateError
-
 			m.errMsg = fmt.Errorf("failed to read commit message: %w", err).Error()
-
 			return m, nil
-
 		}
-
 		m.commitMessage = strings.TrimSpace(string(content))
-
 		return m, nil
 	}
 
@@ -394,20 +441,24 @@ func (m *AIMessageModel) View() string {
 	if m.cancel {
 		if m.state == StateCommitted {
 			var b strings.Builder
-
 			header := shared.HeaderStyle.Render("Committed successfully:")
 			b.WriteString("\n" + header + "\n")
 			b.WriteString(m.commitMessage + "\n")
-
 			return b.String()
 		}
-
 		return shared.ErrorStyle.Render("Commit cancelled.") + "\n"
 	}
 
 	switch m.state {
 	case StateGenerating:
-		return "\n" + shared.HeaderStyle.Render("Generating commit message...") + "\n\n" + m.spinner.View() + " Generating commit message..." + "\n"
+		var b strings.Builder
+		b.WriteString("\n" + shared.HeaderStyle.Render("Generating commit message...") + "\n\n")
+		if m.commitMessage != "" {
+			b.WriteString(m.commitMessage + "\n")
+		} else {
+			b.WriteString(m.spinner.View() + " Generating commit message..." + "\n")
+		}
+		return b.String()
 
 	case StateCommitting:
 		return "\n" + shared.HeaderStyle.Render("Committing...") + "\n\n" + m.spinner.View() + " Committing changes..." + "\n"
@@ -417,52 +468,48 @@ func (m *AIMessageModel) View() string {
 
 	case StateError:
 		var b strings.Builder
-
 		header := shared.HeaderStyle.Render("Commit failed:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(shared.ErrorStyle.Render(m.errMsg) + "\n")
 		b.WriteString("\n[x] Cancel / [q] Quit\n")
-
 		return b.String()
 
 	case StateCommitted:
 		var b strings.Builder
-
 		header := shared.HeaderStyle.Render("Committed successfully:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
 		b.WriteString("\n[p] Push   [x] Cancel\n")
-
 		return b.String()
 
 	case StatePushed:
 		var b strings.Builder
-
 		header := shared.HeaderStyle.Render("Pushed successfully:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
-
 		return b.String()
 
 	case StateGenerated:
 		var b strings.Builder
-
 		header := shared.HeaderStyle.Render("AI commit message suggestion:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.commitMessage + "\n")
+		if m.config.Verbose && m.usage.TotalTokens > 0 {
+			fmt.Fprintf(&b, "\nTokens: %d (prompt) + %d (completion) = %d (total)\n",
+				m.usage.PromptTokens, m.usage.CompletionTokens, m.usage.TotalTokens)
+		}
 		b.WriteString("\n[e] Edit   [r] Regenerate   [c] Commit   [x] Cancel\n")
-
 		return b.String()
+
 	case StateSecurityWarning:
 		var b strings.Builder
-
 		header := shared.HeaderStyle.Render("Warning, potential sensitive data detected in added lines:")
 		b.WriteString("\n" + header + "\n")
 		b.WriteString(m.errMsg + "\n")
 		b.WriteString("\nDo you wish to continue?\n")
 		b.WriteString("\n[Y] yes   [n] no\n")
-
 		return b.String()
+
 	case StateEditing:
 		return fmt.Sprintf(
 			"\n%s\n\n%s\n\n%s",
@@ -471,7 +518,6 @@ func (m *AIMessageModel) View() string {
 			"(ctrl+s to save, esc to cancel)",
 		)
 	default:
-		// fallback - shouldn't happen
 		return "\n" + shared.HeaderStyle.Render("Unknown state") + "\n"
 	}
 }

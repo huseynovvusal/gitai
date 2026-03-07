@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -29,10 +31,31 @@ const (
 
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
-type Service struct{}
+var ignoredFiles = map[string]bool{
+	"go.sum":            true,
+	"package-lock.json": true,
+	"yarn.lock":         true,
+	"pnpm-lock.yaml":    true,
+	"composer.lock":     true,
+	"Cargo.lock":        true,
+	"Gemfile.lock":      true,
+	"mix.lock":          true,
+	"poetry.lock":       true,
+	"uv.lock":           true,
+}
+
+var hunkHeaderRegex = regexp.MustCompile(`(?m)^@@\s.*\s@@\n`)
+
+type Service struct {
+	useNativeGit bool
+}
 
 func NewService() *Service {
-	return &Service{}
+	// Check if git is available in PATH
+	_, err := exec.LookPath("git")
+	return &Service{
+		useNativeGit: err == nil,
+	}
 }
 
 // --- Public API ---
@@ -74,6 +97,9 @@ func (s *Service) GetChangedFiles() ([]string, error) {
 }
 
 func (s *Service) GetChangesForFiles(files []string) (string, error) {
+	if s.useNativeGit {
+		return s.generateNativeDiff(files, false)
+	}
 	ctx, err := s.getRepoContext()
 	if err != nil {
 		return "", err
@@ -86,6 +112,9 @@ func (s *Service) GetChangesForFiles(files []string) (string, error) {
 }
 
 func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
+	if s.useNativeGit {
+		return s.generateNativeDiff(files, true)
+	}
 	ctx, err := s.getRepoContext()
 	if err != nil {
 		return "", err
@@ -115,6 +144,45 @@ func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
 	}
 	sort.Strings(combined)
 	return s.generateBatchDiff(combined, parentTree, ctx.root), nil
+}
+
+func (s *Service) generateNativeDiff(files []string, amend bool) (string, error) {
+	root, err := GetGitRoot()
+	if err != nil {
+		return "", err
+	}
+
+	var args []string
+	if amend {
+		args = []string{"diff", "HEAD^"}
+	} else {
+		args = []string{"diff", "HEAD"}
+	}
+
+	// Filter out ignored files for native git too
+	var filteredFiles []string
+	for _, f := range files {
+		rel, err := filepath.Rel(root, f)
+		if err == nil && !ignoredFiles[filepath.Base(rel)] {
+			filteredFiles = append(filteredFiles, rel)
+		}
+	}
+
+	if len(filteredFiles) == 0 {
+		return "", nil
+	}
+
+	args = append(args, "--")
+	args = append(args, filteredFiles...)
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git diff failed: %w", err)
+	}
+
+	return string(out), nil
 }
 
 func (s *Service) GetFilesInLastCommit() ([]string, error) {
