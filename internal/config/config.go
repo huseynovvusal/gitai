@@ -74,6 +74,7 @@ func LoadConfig(v *viper.Viper) (*Config, error) {
 	_ = v.BindEnv("ai.api_key", "GEMINI_API_KEY")
 	_ = v.BindEnv("ai.api_key", "GOOGLE_API_KEY")
 	_ = v.BindEnv("ai.api_key", "GITAI_API_KEY")
+	_ = v.BindEnv("ai.provider", "GITAI_PROVIDER")
 	_ = v.BindEnv("security.keywords", "GITAI_SENSITIVE_KEYWORDS")
 
 	// Defaults
@@ -87,6 +88,7 @@ func LoadConfig(v *viper.Viper) (*Config, error) {
 	v.SetDefault("ai.temperature", 0.7)
 	v.SetDefault("ai.max_tokens", 256)
 	v.SetDefault("ai.model", "")
+	v.SetDefault("ai.provider", "gemini")
 	v.SetDefault("suggest.editor", "system")
 
 	_ = v.ReadInConfig()

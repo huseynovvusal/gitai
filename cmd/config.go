@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,12 +9,16 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"huseynovvusal/gitai/internal/config"
 )
 
 func NewConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage gitai configuration",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			config.LoadConfig(viper.GetViper())
+		},
 	}
 
 	cmd.AddCommand(newConfigGetCmd())
@@ -63,18 +66,9 @@ func newConfigSetCmd() *cobra.Command {
 				_ = os.MkdirAll(configDir, 0755)
 			}
 
-			configPath := filepath.Join(configDir, "gitai.json")
+			configPath := filepath.Join(configDir, "gitai.yaml")
 
-			// Load existing config to merge
-			settings := viper.AllSettings()
-
-			data, err := json.MarshalIndent(settings, "", "  ")
-			if err != nil {
-				fmt.Println("Error marshaling config:", err)
-				return
-			}
-
-			err = os.WriteFile(configPath, data, 0644)
+			err = viper.WriteConfigAs(configPath)
 			if err != nil {
 				fmt.Println("Error writing config file:", err)
 				return
