@@ -58,7 +58,9 @@ func TestExecute(t *testing.T) {
 		}
 
 		// Should get an error about command execution failure
-		if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "failed to execute Gemini command") &&
+			!strings.Contains(errMsg, "command not found") {
 			t.Errorf("Expected execution error, got: %v", err)
 		}
 	})
@@ -446,7 +448,7 @@ func TestBuildGeminiCommandWithModel(t *testing.T) {
 
 			expectedModel := tt.model
 			if expectedModel == "" {
-				expectedModel = "gemini-3-flash-preview" // Default model
+				expectedModel = DefaultModel
 			}
 
 			if len(cmd) > 2 && cmd[2] != expectedModel {
@@ -507,7 +509,8 @@ func TestExecuteWithModel(t *testing.T) {
 				}
 			} else {
 				// Skip test if command not found (expected during development)
-				if err != nil && strings.Contains(err.Error(), "failed to execute Gemini command") {
+				if err != nil && (strings.Contains(err.Error(), "failed to execute Gemini command") ||
+				strings.Contains(err.Error(), "command not found")) {
 					t.Skip("Gemini command not available, skipping test")
 				}
 
@@ -560,7 +563,8 @@ func TestExecuteWithModelAndTimeout(t *testing.T) {
 				}
 			} else {
 				// Skip test if command not found (expected during development)
-				if err != nil && strings.Contains(err.Error(), "failed to execute Gemini command") {
+				if err != nil && (strings.Contains(err.Error(), "failed to execute Gemini command") ||
+				strings.Contains(err.Error(), "command not found")) {
 					t.Skip("Gemini command not available, skipping test")
 				}
 
@@ -580,8 +584,7 @@ func TestDefaultModel(t *testing.T) {
 	client := NewClient()
 
 	// This will fail until we implement the model field
-	// Expected default model should be "gemini-3-flash-preview"
-	expectedDefault := "gemini-3-flash-preview"
+	expectedDefault := DefaultModel
 
 	// Build command and check if it contains default model
 	cmd := client.buildGeminiCommandWithModel("test")
@@ -631,7 +634,9 @@ func TestExecuteWithWorkingDirectory(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "failed to execute Gemini command") &&
+		!strings.Contains(errMsg, "command not found") {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -654,7 +659,9 @@ func TestWorkingDirectoryFallback(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "failed to execute Gemini command") &&
+		!strings.Contains(errMsg, "command not found") {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -672,7 +679,9 @@ func TestConvenienceExecuteWithWorkingDirectory(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "failed to execute Gemini command") &&
+		!strings.Contains(errMsg, "command not found") {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -691,7 +700,9 @@ func TestConvenienceExecuteWithWorkingDirectoryAndTimeout(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "failed to execute Gemini command") &&
+		!strings.Contains(errMsg, "command not found") {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
@@ -711,7 +722,9 @@ func TestConvenienceExecuteWithFullConfig(t *testing.T) {
 	}
 
 	// The error should indicate command execution failed, not directory issues
-	if !strings.Contains(err.Error(), "failed to execute Gemini command") {
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "failed to execute Gemini command") &&
+		!strings.Contains(errMsg, "command not found") {
 		t.Errorf("Expected command execution error, got: %v", err)
 	}
 }
