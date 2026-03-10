@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -29,10 +30,29 @@ const (
 
 var ErrOutsideRepo = errors.New("path is outside the repository")
 
-type Service struct{}
+var ignoredFiles = map[string]bool{
+	"go.sum":            true,
+	"package-lock.json": true,
+	"yarn.lock":         true,
+	"pnpm-lock.yaml":    true,
+	"composer.lock":     true,
+	"Cargo.lock":        true,
+	"Gemfile.lock":      true,
+	"mix.lock":          true,
+	"poetry.lock":       true,
+	"uv.lock":           true,
+}
+
+type Service struct {
+	useNativeGit bool
+}
 
 func NewService() *Service {
-	return &Service{}
+	// Check if git is available in PATH
+	_, err := exec.LookPath("git")
+	return &Service{
+		useNativeGit: err == nil,
+	}
 }
 
 // --- Public API ---
@@ -74,6 +94,9 @@ func (s *Service) GetChangedFiles() ([]string, error) {
 }
 
 func (s *Service) GetChangesForFiles(files []string) (string, error) {
+	if s.useNativeGit {
+		return s.generateNativeDiff(files, false)
+	}
 	ctx, err := s.getRepoContext()
 	if err != nil {
 		return "", err
@@ -86,6 +109,9 @@ func (s *Service) GetChangesForFiles(files []string) (string, error) {
 }
 
 func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
+	if s.useNativeGit {
+		return s.generateNativeDiff(files, true)
+	}
 	ctx, err := s.getRepoContext()
 	if err != nil {
 		return "", err
@@ -115,6 +141,84 @@ func (s *Service) GetAmendChangesForFiles(files []string) (string, error) {
 	}
 	sort.Strings(combined)
 	return s.generateBatchDiff(combined, parentTree, ctx.root), nil
+}
+
+func (s *Service) generateNativeDiff(files []string, amend bool) (string, error) {
+	root, err := GetGitRoot()
+	if err != nil {
+		return "", err
+	}
+
+	// Filter out ignored files for native git too
+	var filteredFiles []string
+	for _, f := range files {
+		abs, err := filepath.Abs(f)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(root, abs)
+		if err == nil && !ignoredFiles[filepath.Base(rel)] {
+			filteredFiles = append(filteredFiles, rel)
+		}
+	}
+
+	if len(filteredFiles) == 0 {
+		return "", nil
+	}
+
+	// Find untracked files first
+	lsCmd := exec.Command("git", "ls-files", "--others", "--exclude-standard", "--")
+	lsCmd.Dir = root
+	lsOut, _ := lsCmd.Output()
+	untrackedSet := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(string(lsOut)), "\n") {
+		if line != "" {
+			untrackedSet[line] = true
+		}
+	}
+
+	// Split into tracked and untracked
+	var tracked, untracked []string
+	for _, f := range filteredFiles {
+		if untrackedSet[f] {
+			untracked = append(untracked, f)
+		} else {
+			tracked = append(tracked, f)
+		}
+	}
+
+	var result strings.Builder
+
+	// Diff tracked files against HEAD
+	if len(tracked) > 0 {
+		var args []string
+		if amend {
+			args = []string{"diff", "HEAD^"}
+		} else {
+			args = []string{"diff", "HEAD"}
+		}
+		args = append(args, "--")
+		args = append(args, tracked...)
+
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("git diff failed: %w", err)
+		}
+		result.Write(out)
+	}
+
+	// Generate diffs for untracked (new) files
+	for _, f := range untracked {
+		content, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			continue
+		}
+		result.WriteString(generateDiffString(f, "", string(content), true, false))
+	}
+
+	return result.String(), nil
 }
 
 func (s *Service) GetFilesInLastCommit() ([]string, error) {

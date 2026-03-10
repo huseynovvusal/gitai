@@ -4,9 +4,16 @@ import (
 	"context"
 )
 
+type StreamResult struct {
+	Token string
+	Usage Usage
+	Err   error
+}
+
 // AIProvider defines the interface for underlying AI services.
 type AIProvider interface {
-	GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error)
+	GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, Usage, error)
+	StreamContent(ctx context.Context, systemMessage, userMessage string) (<-chan StreamResult, error)
 }
 
 // NewAIProvider creates a new AIProvider based on the provider type and configuration.
@@ -19,7 +26,7 @@ func NewAIProvider(p Provider, cfg Config) (AIProvider, error) {
 	case ProviderOllama:
 		return NewOllamaProvider(cfg.OllamaPath, cfg.Model), nil
 	case ProvideGeminiCLI:
-		return NewGeminiCLIProvider(), nil
+		return NewGeminiCLIProvider(cfg.Model, cfg.NoSession), nil
 	case ProviderClaudeCLI:
 		return NewClaudeCLIProvider(cfg.Model), nil
 	case ProviderAnthropic:

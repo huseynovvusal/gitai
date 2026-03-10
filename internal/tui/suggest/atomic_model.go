@@ -63,9 +63,10 @@ type AtomicModel struct {
 	hunksString string
 	pushOutput  string
 	hasRemotes  bool
+	verbose     bool
 }
 
-func NewAtomicModel(ctx context.Context, files []string, generator AtomicGenerator, gs AtomicGitService, editorMode, hint string, hasRemotes bool) AtomicModel {
+func NewAtomicModel(ctx context.Context, files []string, generator AtomicGenerator, gs AtomicGitService, editorMode, hint string, hasRemotes bool, verbose bool) AtomicModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.CursorStyle
@@ -87,6 +88,7 @@ func NewAtomicModel(ctx context.Context, files []string, generator AtomicGenerat
 		textArea:   ta,
 		editorMode: editorMode,
 		hasRemotes: hasRemotes,
+		verbose:    verbose,
 	}
 }
 
@@ -106,7 +108,7 @@ func (m *AtomicModel) fetchHunksCmd() tea.Cmd {
 
 func (m *AtomicModel) generatePlanCmd() tea.Cmd {
 	return func() tea.Msg {
-		commits, err := m.generator.GenerateAtomic(m.ctx, m.hunksString, m.hint)
+		commits, _, err := m.generator.GenerateAtomic(m.ctx, m.hunksString, m.hint)
 		if err != nil {
 			return atomicExecMsg{err: err}
 		}

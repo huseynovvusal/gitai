@@ -20,6 +20,9 @@ func NewSuggestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "suggest [files...]",
 		Short: "Suggest commit messages for changed files using AI",
+		Long: `Suggest commit messages for changed files using AI.
+You can optionally provide a hint as a positional argument if you've already selected files via flags or if you want to use it for all changed files.
+Example: gitai suggest "fix: resolve auth issue"`,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			gitService := git.NewService()
 			files, err := gitService.GetChangedFiles()
@@ -46,8 +49,24 @@ func NewSuggestCmd() *cobra.Command {
 			cfg, err := config.LoadConfig(viper.GetViper())
 			if err != nil {
 				cmd.PrintErrln("Error loading config:", err)
-
 				return
+			}
+
+			// Positional hint logic: if the first argument is not a file that exists, treat it as a hint.
+			var files []string
+			hint := cfg.Suggest.Hint
+
+			for _, arg := range args {
+				if _, err := os.Stat(arg); err == nil {
+					files = append(files, arg)
+				} else {
+					if hint == "" {
+						hint = arg
+					} else {
+						// If hint is already set, maybe append? For now just treat as file (which will be filtered out if invalid)
+						files = append(files, arg)
+					}
+				}
 			}
 
 			providerEnum, err := provider.ParseProvider(cfg.AI.Provider)
@@ -58,7 +77,6 @@ func NewSuggestCmd() *cobra.Command {
 				} else {
 					cmd.PrintErrln("Error parsing provider:", err)
 				}
-
 				return
 			}
 
@@ -68,37 +86,34 @@ func NewSuggestCmd() *cobra.Command {
 				Temperature: cfg.AI.Temperature,
 				Model:       cfg.AI.Model,
 				OllamaPath:  cfg.Ollama.Path,
+				NoSession:   cfg.AI.NoSession,
 			})
 			if err != nil {
-				cmd.PrintErrln("Error creating AI provider:", err)
-
+				if errors.Is(err, provider.ErrAPIKeyNotSet) {
+					cmd.PrintErrln("Error: API key not set for provider", providerEnum)
+					cmd.PrintErrln("Please set it in your config file (~/.config/gitai/gitai.yaml) or via environment variable (e.g. OPENAI_API_KEY)")
+				} else {
+					cmd.PrintErrln("Error creating AI provider:", err)
+				}
 				return
 			}
 
-			service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint)
-
+			service := ai.NewService(aiProvider, cfg.Suggest.BulletPoint, cfg.AI.DebugFile)
 			gitService := git.NewService()
-
-			amend := cfg.Suggest.Amend
-			force := cfg.Suggest.ForcePush
-
-			if force && !amend {
-				cmd.PrintErrln("Error: --force can only be used with --amend")
-				return
-			}
 
 			flowConfig := suggest.FlowConfig{
 				EditorMode:       cfg.Suggest.Editor,
 				SecurityKeywords: cfg.Security.Keywords,
-				Amend:            amend,
-				ForcePush:        force,
+				Amend:            cfg.Suggest.Amend,
+				ForcePush:        cfg.Suggest.ForcePush,
 				Atomic:           cfg.Suggest.Atomic,
+				Verbose:          cfg.Suggest.Verbose,
 			}
 
 			flow := suggest.NewFlow(service, gitService, flowConfig, suggest.JiraHintProcessor, suggest.GitHubHintProcessor).
-				WithHint(cfg.Suggest.Hint).
+				WithHint(hint).
 				WithSkipHint(cfg.Suggest.NoHint)
-			flow.Run(rootCtx, args)
+			flow.Run(rootCtx, files)
 		},
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"huseynovvusal/gitai/internal/ai"
+	"huseynovvusal/gitai/internal/ai/provider"
 )
 
 var LinksRegex = regexp.MustCompile(`remote:\s*(https?://\S+)`)
@@ -63,6 +64,7 @@ type FlowConfig struct {
 	Amend            bool
 	ForcePush        bool
 	Atomic           bool
+	Verbose          bool
 }
 
 func NewFlow(generator ai.CommitMessageGenerator, gs suggestGitService, cfg FlowConfig, hintProcessors ...HintProcessor) *Flow {
@@ -136,6 +138,8 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 		SecurityKeywords: s.config.SecurityKeywords,
 		Amend:            s.config.Amend,
 		ForcePush:        s.config.ForcePush,
+		Verbose:          s.config.Verbose,
+		BulletPoint:      s.generator.(*ai.Service).BulletPoint(),
 	}, hint)
 	aiModelProgram := tea.NewProgram(&aiModel, tea.WithContext(ctx))
 
@@ -152,7 +156,7 @@ func (s *Flow) Run(ctx context.Context, filesFromArgs []string) {
 
 // AtomicGenerator is a local interface to check for GenerateAtomic capability
 type AtomicGenerator interface {
-	GenerateAtomic(ctx context.Context, hunksInput string, hint string) ([]ai.AtomicCommit, error)
+	GenerateAtomic(ctx context.Context, hunksInput string, hint string) ([]ai.AtomicCommit, provider.Usage, error)
 }
 
 func (s *Flow) runAtomicFlow(ctx context.Context, selectedFiles []string, hint string) {
@@ -163,7 +167,7 @@ func (s *Flow) runAtomicFlow(ctx context.Context, selectedFiles []string, hint s
 	}
 
 	hasRemotes, _ := s.gitService.HasRemotes()
-	model := NewAtomicModel(ctx, selectedFiles, gen, s.gitService, s.config.EditorMode, hint, hasRemotes)
+	model := NewAtomicModel(ctx, selectedFiles, gen, s.gitService, s.config.EditorMode, hint, hasRemotes, s.config.Verbose)
 	p := tea.NewProgram(&model, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running atomic flow: %v\n", err)

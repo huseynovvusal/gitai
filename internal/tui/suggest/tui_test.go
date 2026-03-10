@@ -2,9 +2,11 @@ package suggest
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"huseynovvusal/gitai/internal/ai/provider"
 	"huseynovvusal/gitai/internal/git"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,8 +19,12 @@ type mockGenerator struct {
 	err      error
 }
 
-func (m *mockGenerator) Generate(ctx context.Context, _, _, _, _ string) (string, error) {
-	return m.response, m.err
+func (m *mockGenerator) Generate(ctx context.Context, _, _, _, _ string) (string, provider.Usage, error) {
+	return m.response, provider.Usage{}, m.err
+}
+
+func (m *mockGenerator) Stream(_ context.Context, _, _, _, _ string) (<-chan provider.StreamResult, error) {
+	return nil, errors.New("not supported")
 }
 
 // mockMessageService implements ONLY messageGitService interface

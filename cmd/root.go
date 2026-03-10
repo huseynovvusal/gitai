@@ -17,6 +17,7 @@ func Execute(version string) {
 	rootCmd.AddCommand(NewSuggestCmd())
 	rootCmd.AddCommand(NewReviewCmd())
 	rootCmd.AddCommand(NewHookCmd())
+	rootCmd.AddCommand(NewConfigCmd())
 	err := rootCmd.Execute()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

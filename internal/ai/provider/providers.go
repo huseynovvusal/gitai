@@ -73,9 +73,9 @@ func NewGPTProvider(
 }
 
 // GenerateContent generates content using OpenAI.
-func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
+func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, Usage, error) {
 	if p.apiKey == "" {
-		return "", ErrAPIKeyNotSet
+		return "", Usage{}, ErrAPIKeyNotSet
 	}
 	args := []openaiOption.RequestOption{openaiOption.WithAPIKey(p.apiKey)}
 	if p.baseUrl != "" {
@@ -95,14 +95,58 @@ func (p *GPTProvider) GenerateContent(ctx context.Context, systemMessage, userMe
 		Temperature: openai.Float(p.temperature),
 	})
 	if err != nil {
-		return "", fmt.Errorf("openai request failed: %w", err)
+		return "", Usage{}, fmt.Errorf("openai request failed: %w", err)
 	}
 
 	if len(res.Choices) == 0 {
-		return "", ErrNoResponse
+		return "", Usage{}, ErrNoResponse
 	}
 
-	return res.Choices[0].Message.Content, nil
+	usage := Usage{
+		PromptTokens:     int(res.Usage.PromptTokens),
+		CompletionTokens: int(res.Usage.CompletionTokens),
+		TotalTokens:      int(res.Usage.TotalTokens),
+	}
+
+	return res.Choices[0].Message.Content, usage, nil
+}
+
+// StreamContent generates content using OpenAI with streaming.
+func (p *GPTProvider) StreamContent(ctx context.Context, systemMessage, userMessage string) (<-chan StreamResult, error) {
+	if p.apiKey == "" {
+		return nil, ErrAPIKeyNotSet
+	}
+	args := []openaiOption.RequestOption{openaiOption.WithAPIKey(p.apiKey)}
+	if p.baseUrl != "" {
+		args = append(args, openaiOption.WithBaseURL(p.baseUrl))
+	}
+	client := openai.NewClient(args...)
+
+	stream := client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+		Model: p.model,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(systemMessage),
+			openai.UserMessage(userMessage),
+		},
+		MaxTokens:   openai.Int(p.maxTokens),
+		Temperature: openai.Float(p.temperature),
+	})
+
+	out := make(chan StreamResult)
+	go func() {
+		defer close(out)
+		for stream.Next() {
+			chunk := stream.Current()
+			if len(chunk.Choices) > 0 {
+				out <- StreamResult{Token: chunk.Choices[0].Delta.Content}
+			}
+		}
+		if err := stream.Err(); err != nil {
+			out <- StreamResult{Err: err}
+		}
+	}()
+
+	return out, nil
 }
 
 // GeminiProvider implements AIProvider for Google Gemini.
@@ -122,16 +166,16 @@ func NewGeminiProvider(apiKey string, maxTokens int32, temperature float32, mode
 }
 
 // GenerateContent generates content using Google Gemini.
-func (p *GeminiProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
+func (p *GeminiProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, Usage, error) {
 	if p.apiKey == "" {
-		return "", ErrAPIKeyNotSet
+		return "", Usage{}, ErrAPIKeyNotSet
 	}
 
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey: p.apiKey,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create gemini client: %w", err)
+		return "", Usage{}, fmt.Errorf("failed to create gemini client: %w", err)
 	}
 
 	contents := []*genai.Content{
@@ -148,14 +192,67 @@ func (p *GeminiProvider) GenerateContent(ctx context.Context, systemMessage, use
 
 	resp, err := client.Models.GenerateContent(ctx, p.model, contents, modelConfig)
 	if err != nil {
-		return "", fmt.Errorf("gemini request failed: %w", err)
+		return "", Usage{}, fmt.Errorf("gemini request failed: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return "", ErrNoResponse
+		return "", Usage{}, ErrNoResponse
 	}
 
-	return resp.Candidates[0].Content.Parts[0].Text, nil
+	usage := Usage{}
+	if resp.UsageMetadata != nil {
+		usage.PromptTokens = int(resp.UsageMetadata.PromptTokenCount)
+		usage.CompletionTokens = int(resp.UsageMetadata.CandidatesTokenCount)
+		usage.TotalTokens = int(resp.UsageMetadata.TotalTokenCount)
+	}
+
+	return resp.Candidates[0].Content.Parts[0].Text, usage, nil
+}
+
+func (p *GeminiProvider) StreamContent(ctx context.Context, systemMessage, userMessage string) (<-chan StreamResult, error) {
+	if p.apiKey == "" {
+		return nil, ErrAPIKeyNotSet
+	}
+
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: p.apiKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gemini client: %w", err)
+	}
+
+	contents := []*genai.Content{
+		{
+			Role:  "system",
+			Parts: []*genai.Part{{Text: systemMessage}},
+		},
+		{
+			Role:  "user",
+			Parts: []*genai.Part{{Text: userMessage}},
+		},
+	}
+	modelConfig := &genai.GenerateContentConfig{Temperature: &p.temperature, MaxOutputTokens: p.maxTokens}
+
+	iter := client.Models.GenerateContentStream(ctx, p.model, contents, modelConfig)
+
+	out := make(chan StreamResult)
+	go func() {
+		defer close(out)
+		for resp, err := range iter {
+			if err != nil {
+				if strings.Contains(err.Error(), "EOF") {
+					break
+				}
+				out <- StreamResult{Err: err}
+				return
+			}
+			if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
+				out <- StreamResult{Token: resp.Candidates[0].Content.Parts[0].Text}
+			}
+		}
+	}()
+
+	return out, nil
 }
 
 // OllamaProvider implements AIProvider for Ollama.
@@ -173,9 +270,9 @@ func NewOllamaProvider(apiPath string, model string) *OllamaProvider {
 }
 
 // GenerateContent generates content using local Ollama.
-func (p *OllamaProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
+func (p *OllamaProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, Usage, error) {
 	if p.apiPath == "" {
-		return "", ErrOllamaPathMissing
+		return "", Usage{}, ErrOllamaPathMissing
 	}
 
 	tCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -186,33 +283,47 @@ func (p *OllamaProvider) GenerateContent(ctx context.Context, systemMessage, use
 	out, err := cmd.CombinedOutput()
 
 	if errors.Is(tCtx.Err(), context.DeadlineExceeded) {
-		return "", fmt.Errorf("ollama command timed out: %w", tCtx.Err())
+		return "", Usage{}, fmt.Errorf("ollama command timed out: %w", tCtx.Err())
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("ollama command failed: %w, output: %s", err, string(out))
+		return "", Usage{}, fmt.Errorf("ollama command failed: %w, output: %s", err, string(out))
 	}
 
-	return string(out), nil
+	return string(out), Usage{}, nil
+}
+
+func (p *OllamaProvider) StreamContent(ctx context.Context, systemMessage, userMessage string) (<-chan StreamResult, error) {
+	return nil, errors.New("streaming is not yet supported for Ollama")
 }
 
 // GeminiCLIProvider implements AIProvider for Gemini CLI Wrapper.
-type GeminiCLIProvider struct{}
+type GeminiCLIProvider struct {
+	model     string
+	noSession bool
+}
 
 // NewGeminiCLIProvider creates a new GeminiCLIProvider.
-func NewGeminiCLIProvider() *GeminiCLIProvider {
-	return &GeminiCLIProvider{}
+func NewGeminiCLIProvider(model string, noSession bool) *GeminiCLIProvider {
+	return &GeminiCLIProvider{model: model, noSession: noSession}
 }
 
 // GenerateContent generates content using Gemini CLI.
-func (p *GeminiCLIProvider) GenerateContent(_ context.Context, systemMessage, userMessage string) (string, error) {
+func (p *GeminiCLIProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, Usage, error) {
 	prompt := fmt.Sprintf("System: %s\nUser: %s", systemMessage, userMessage)
-	client := geminicli.NewClient()
+	client := geminicli.NewClientWithConfig(geminicli.Config{
+		Model: p.model,
+	})
 	resp, err := client.Execute(prompt)
 	if err != nil {
-		return "", fmt.Errorf("geminicli execution failed: %w", err)
+		return "", Usage{}, fmt.Errorf("geminicli execution failed: %w", err)
 	}
-	return resp, nil
+
+	return resp, Usage{}, nil
+}
+
+func (p *GeminiCLIProvider) StreamContent(ctx context.Context, systemMessage, userMessage string) (<-chan StreamResult, error) {
+	return nil, errors.New("streaming is not yet supported for GeminiCLI")
 }
 
 // AnthropicProvider implements AIProvider for Anthropic (Claude).
@@ -237,9 +348,9 @@ func NewAnthropicProvider(apiKey string, maxTokens int, temperature float64, mod
 }
 
 // GenerateContent generates content using Anthropic.
-func (p *AnthropicProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, error) {
+func (p *AnthropicProvider) GenerateContent(ctx context.Context, systemMessage, userMessage string) (string, Usage, error) {
 	if p.apiKey == "" {
-		return "", ErrAPIKeyNotSet
+		return "", Usage{}, ErrAPIKeyNotSet
 	}
 
 	client := anthropic.NewClient(option.WithAPIKey(p.apiKey))
@@ -259,14 +370,24 @@ func (p *AnthropicProvider) GenerateContent(ctx context.Context, systemMessage, 
 		Temperature: anthropic.Float(p.temperature),
 	})
 	if err != nil {
-		return "", fmt.Errorf("anthropic request failed: %w", err)
+		return "", Usage{}, fmt.Errorf("anthropic request failed: %w", err)
 	}
 
 	if len(resp.Content) == 0 {
-		return "", ErrNoResponse
+		return "", Usage{}, ErrNoResponse
 	}
 
-	return resp.Content[0].Text, nil
+	usage := Usage{
+		PromptTokens:     int(resp.Usage.InputTokens),
+		CompletionTokens: int(resp.Usage.OutputTokens),
+		TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+	}
+
+	return resp.Content[0].Text, usage, nil
+}
+
+func (p *AnthropicProvider) StreamContent(ctx context.Context, systemMessage, userMessage string) (<-chan StreamResult, error) {
+	return nil, errors.New("streaming is not yet supported for Anthropic")
 }
 
 // ClaudeCLIProvider implements AIProvider using the Claude Code CLI.
@@ -280,13 +401,17 @@ func NewClaudeCLIProvider(model string) *ClaudeCLIProvider {
 }
 
 // GenerateContent generates content using the Claude Code CLI.
-func (p *ClaudeCLIProvider) GenerateContent(_ context.Context, systemMessage, userMessage string) (string, error) {
+func (p *ClaudeCLIProvider) GenerateContent(_ context.Context, systemMessage, userMessage string) (string, Usage, error) {
 	prompt := fmt.Sprintf("System: %s\nUser: %s", systemMessage, userMessage)
 	cfg := claudecli.Config{Model: p.model}
 	client := claudecli.NewClientWithConfig(cfg)
 	resp, err := client.Execute(prompt)
 	if err != nil {
-		return "", fmt.Errorf("claudecli execution failed: %w", err)
+		return "", Usage{}, fmt.Errorf("claudecli execution failed: %w", err)
 	}
-	return resp, nil
+	return resp, Usage{}, nil
+}
+
+func (p *ClaudeCLIProvider) StreamContent(_ context.Context, _, _ string) (<-chan StreamResult, error) {
+	return nil, errors.New("streaming is not yet supported for ClaudeCLI")
 }

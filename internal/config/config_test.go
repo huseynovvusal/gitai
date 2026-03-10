@@ -1,8 +1,42 @@
 package config
 
 import (
+	"os"
 	"testing"
+
+	"github.com/spf13/viper"
 )
+
+func TestLoadConfig_Defaults(t *testing.T) {
+	// Use a temp dir with no config files so we only test defaults
+	tmpDir, err := os.MkdirTemp("", "gitai-config-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Setenv("HOME", tmpDir)
+
+	v := viper.New()
+	cfg, err := LoadConfig(v)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	t.Logf("Viper ai.provider: %v", v.Get("ai.provider"))
+	t.Logf("Config AI.Provider: %q", cfg.AI.Provider)
+
+	// Currently it defaults to "" but we want it to default to "gemini"
+	if cfg.AI.Provider != "gemini" {
+		t.Errorf("expected default provider 'gemini', got %q", cfg.AI.Provider)
+	}
+	if cfg.AI.Temperature != 0.7 {
+		t.Errorf("expected default temperature 0.7, got %f", cfg.AI.Temperature)
+	}
+	if cfg.AI.MaxTokens != 256 {
+		t.Errorf("expected default max tokens 256, got %d", cfg.AI.MaxTokens)
+	}
+}
 
 func TestParseKeywordsCSV(t *testing.T) {
 	tests := []struct {

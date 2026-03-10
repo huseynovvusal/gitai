@@ -2,7 +2,10 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"huseynovvusal/gitai/internal/ai/provider"
 )
 
 type mockReviewProvider struct {
@@ -10,8 +13,12 @@ type mockReviewProvider struct {
 	err      error
 }
 
-func (m *mockReviewProvider) GenerateContent(_ context.Context, _, _ string) (string, error) {
-	return m.response, m.err
+func (m *mockReviewProvider) GenerateContent(_ context.Context, _, _ string) (string, provider.Usage, error) {
+	return m.response, provider.Usage{}, m.err
+}
+
+func (m *mockReviewProvider) StreamContent(_ context.Context, _, _ string) (<-chan provider.StreamResult, error) {
+	return nil, errors.New("not supported")
 }
 
 func TestReviewService_Review(t *testing.T) {

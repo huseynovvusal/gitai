@@ -31,4 +31,11 @@ type Config struct {
 	MaxTokens   int64
 	Temperature float64
 	OllamaPath  string
+	NoSession   bool
+}
+
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
 }

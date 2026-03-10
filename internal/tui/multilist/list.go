@@ -17,6 +17,7 @@ import (
 type additionalKeyMap struct {
 	Toggle    key.Binding
 	SelectAll key.Binding
+	Invert    key.Binding
 }
 
 func newAdditionalKeyMap() additionalKeyMap {
@@ -28,6 +29,10 @@ func newAdditionalKeyMap() additionalKeyMap {
 		SelectAll: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "select all"),
+		),
+		Invert: key.NewBinding(
+			key.WithKeys("i"),
+			key.WithHelp("i", "invert selection"),
 		),
 	}
 }
@@ -125,10 +130,10 @@ func New(data []string, title string, opts ...Option) Model {
 
 	keys := newAdditionalKeyMap()
 	l.AdditionalShortHelpKeys = func() []key.Binding {
-		return []key.Binding{keys.Toggle, keys.SelectAll}
+		return []key.Binding{keys.Toggle, keys.SelectAll, keys.Invert}
 	}
 	l.AdditionalFullHelpKeys = func() []key.Binding {
-		return []key.Binding{keys.Toggle, keys.SelectAll}
+		return []key.Binding{keys.Toggle, keys.SelectAll, keys.Invert}
 	}
 
 	return Model{List: l, keys: keys}
@@ -147,6 +152,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		if key.Matches(msg, m.keys.SelectAll) {
 			return m.toggleAll()
+		}
+
+		if key.Matches(msg, m.keys.Invert) {
+			return m.toggleInvert()
 		}
 	}
 
@@ -245,6 +254,31 @@ func (m Model) toggleAll() (Model, tea.Cmd) {
 				item.Selected = targetState
 				cmds = append(cmds, m.List.SetItem(idx, item))
 			}
+		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) toggleInvert() (Model, tea.Cmd) {
+	visibleItems := m.List.VisibleItems()
+	if len(visibleItems) == 0 {
+		return m, nil
+	}
+
+	visibleMap := make(map[string]bool)
+	for _, i := range visibleItems {
+		visibleMap[i.(Item).Value] = true
+	}
+
+	fullList := m.List.Items()
+	var cmds []tea.Cmd
+
+	for idx, i := range fullList {
+		item := i.(Item)
+		if visibleMap[item.Value] {
+			item.Selected = !item.Selected
+			cmds = append(cmds, m.List.SetItem(idx, item))
 		}
 	}
 

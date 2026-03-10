@@ -53,7 +53,7 @@ func (s *ReviewService) Review(ctx context.Context, diff string, hint string) (*
 	userMessage = compressWhitespace(userMessage)
 	sysMsg := compressWhitespace(reviewSystemMessage)
 
-	resp, err := s.provider.GenerateContent(ctx, sysMsg, userMessage)
+	resp, _, err := s.provider.GenerateContent(ctx, sysMsg, userMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate review: %w", err)
 	}
