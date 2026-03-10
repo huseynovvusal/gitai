@@ -20,6 +20,8 @@ func NewAIProvider(p Provider, cfg Config) (AIProvider, error) {
 		return NewOllamaProvider(cfg.OllamaPath, cfg.Model), nil
 	case ProvideGeminiCLI:
 		return NewGeminiCLIProvider(), nil
+	case ProviderClaudeCLI:
+		return NewClaudeCLIProvider(cfg.Model), nil
 	case ProviderAnthropic:
 		return NewAnthropicProvider(cfg.APIKey, int(cfg.MaxTokens), cfg.Temperature, cfg.Model), nil
 	case ProviderGroq:

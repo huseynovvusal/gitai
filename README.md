@@ -2,11 +2,12 @@
 
 [![codecov](https://codecov.io/gh/artback/gitai/branch/main/graph/badge.svg)](https://codecov.io/gh/artback/gitai)
 
-Gitai is an AI-powered CLI tool that helps you write better git commit messages, faster. It analyzes your changes (diffs) to generate concise, standardized commits that follow best practices.
+Gitai is an AI-powered CLI tool that helps you write better git commit messages and review code, faster. It analyzes your changes (diffs) to generate concise, standardized commits that follow best practices, and can review your code for potential issues before you commit.
 
-It supports two main workflows:
+It supports three main workflows:
 - **Interactive Mode**: A terminal UI (TUI) to visually select files, add context hints, and review/edit suggestions.
 - **Targeted Mode**: A quick CLI command to generate messages for specific files or directories instantly.
+- **Review Mode**: AI-powered code review that analyzes your changes and reports potential issues.
 
 Below is a quick animated demo of gitai running in a terminal:
 
@@ -123,6 +124,33 @@ gitai suggest --provider=deepseek # DeepSeek
 gitai suggest --provider=xai      # XAI (Grok)
 gitai suggest --provider=ollama   # Local Ollama
 gitai suggest --provider=gemini   # Google Gemini
+```
+
+### Code Review
+
+Use the `review` command to get AI-powered feedback on your changes before committing:
+
+```sh
+gitai review
+```
+
+You can target specific files:
+
+```sh
+gitai review internal/main.go README.md
+```
+
+Like `suggest`, you can provide hints or skip the hint prompt:
+
+```sh
+gitai review -H "Focus on error handling"
+gitai review --no-hint
+```
+
+Output format can be controlled with `--format`:
+
+```sh
+gitai review --format json
 ```
 
 ## 🔧 Configuration

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"huseynovvusal/gitai/pkg/claudecli"
 	"huseynovvusal/gitai/pkg/geminicli"
 	"os/exec"
 	"strings"
@@ -27,8 +28,10 @@ func ParseProvider(str string) (Provider, error) {
 		return ProvideGeminiCLI, nil
 	case "ollama", "local":
 		return ProviderOllama, nil
-	case "anthropic", "claude":
+	case "anthropic":
 		return ProviderAnthropic, nil
+	case "claude", "claudecli", "claude_cli", "claude-cli", "claude-code":
+		return ProviderClaudeCLI, nil
 	case "groq":
 		return ProviderGroq, nil
 	case "deepseek":
@@ -264,4 +267,26 @@ func (p *AnthropicProvider) GenerateContent(ctx context.Context, systemMessage, 
 	}
 
 	return resp.Content[0].Text, nil
+}
+
+// ClaudeCLIProvider implements AIProvider using the Claude Code CLI.
+type ClaudeCLIProvider struct {
+	model string
+}
+
+// NewClaudeCLIProvider creates a new ClaudeCLIProvider.
+func NewClaudeCLIProvider(model string) *ClaudeCLIProvider {
+	return &ClaudeCLIProvider{model: model}
+}
+
+// GenerateContent generates content using the Claude Code CLI.
+func (p *ClaudeCLIProvider) GenerateContent(_ context.Context, systemMessage, userMessage string) (string, error) {
+	prompt := fmt.Sprintf("System: %s\nUser: %s", systemMessage, userMessage)
+	cfg := claudecli.Config{Model: p.model}
+	client := claudecli.NewClientWithConfig(cfg)
+	resp, err := client.Execute(prompt)
+	if err != nil {
+		return "", fmt.Errorf("claudecli execution failed: %w", err)
+	}
+	return resp, nil
 }

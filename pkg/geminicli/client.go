@@ -2,6 +2,7 @@ package geminicli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ const (
 	GeminiPromptFlag = "-p"
 	GeminiModelFlag  = "-m"
 	DefaultTimeout   = 30 * time.Second
-	DefaultModel     = "gemini-3-flash"
+	DefaultModel     = "gemini-3-flash-preview"
 	MaxRetries       = 3
 
 	ErrEmptyPrompt        = "prompt cannot be empty"
@@ -87,7 +88,7 @@ func NewClientWithConfig(config Config) *Client {
 // Execute executes a Gemini command with the given prompt
 func (c *Client) Execute(prompt string) (string, error) {
 	if prompt == "" {
-		return "", fmt.Errorf(ErrEmptyPrompt)
+		return "", errors.New(ErrEmptyPrompt)
 	}
 
 	// Resolve relative paths if the working directory is set
@@ -115,7 +116,7 @@ func (c *Client) Execute(prompt string) (string, error) {
 	geminiPath, err := exec.LookPath(cmdArgs[0])
 	if err != nil {
 		c.logger.ErrorWith("Failed to find gemini command", "error", err)
-		return "", fmt.Errorf("gemini command not found: %w", err)
+		return "", fmt.Errorf("%s: %w", ErrCommandFailed, err)
 	}
 
 	c.logger.DebugWith("Using gemini path", "path", geminiPath)
@@ -162,7 +163,7 @@ func (c *Client) Execute(prompt string) (string, error) {
 // ExecuteWithTimeout executes Gemini command with custom timeout
 func (c *Client) ExecuteWithTimeout(prompt string, timeout time.Duration) (string, error) {
 	if prompt == "" {
-		return "", fmt.Errorf(ErrEmptyPrompt)
+		return "", errors.New(ErrEmptyPrompt)
 	}
 
 	// Resolve relative paths if working directory is set
@@ -190,7 +191,7 @@ func (c *Client) ExecuteWithTimeout(prompt string, timeout time.Duration) (strin
 	geminiPath, err := exec.LookPath(cmdArgs[0])
 	if err != nil {
 		c.logger.ErrorWith("Failed to find gemini command", "error", err)
-		return "", fmt.Errorf("gemini command not found: %w", err)
+		return "", fmt.Errorf("%s: %w", ErrCommandFailed, err)
 	}
 
 	c.logger.DebugWith("Using gemini path", "path", geminiPath)
@@ -277,20 +278,20 @@ func (c *Client) runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) ([]
 	case err := <-done:
 		if err != nil {
 			// Capture both stdout and stderr for detailed error reporting
-			stdoutStr := strings.TrimSpace(string(stdout.Bytes()))
-			stderrStr := strings.TrimSpace(string(stderr.Bytes()))
+			stdoutStr := strings.TrimSpace(stdout.String())
+			stderrStr := strings.TrimSpace(stderr.String())
 			combined := append(stdout.Bytes(), stderr.Bytes()...)
 
 			// Check if it's an authentication error
 			if c.detectAuthError(combined) {
-				return nil, fmt.Errorf(ErrAuthFailed)
+				return nil, errors.New(ErrAuthFailed)
 			}
 
 			// Check if it's a service unavailable error
 			combinedStr := strings.ToLower(string(combined))
 			if strings.Contains(combinedStr, "service unavailable") ||
 				strings.Contains(combinedStr, "overloaded") {
-				return nil, fmt.Errorf(ErrServiceUnavailable)
+				return nil, errors.New(ErrServiceUnavailable)
 			}
 
 			// Create detailed error message
@@ -317,7 +318,7 @@ func (c *Client) runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) ([]
 // parseGeminiOutput parses the output from Gemini command
 func (c *Client) parseGeminiOutput(output []byte) (string, error) {
 	if len(output) == 0 {
-		return "", fmt.Errorf(ErrEmptyOutput)
+		return "", errors.New(ErrEmptyOutput)
 	}
 
 	// Convert to string and trim whitespace
@@ -327,7 +328,7 @@ func (c *Client) parseGeminiOutput(output []byte) (string, error) {
 	result = c.filterGeminiOutput(result)
 
 	if result == "" {
-		return "", fmt.Errorf(ErrEmptyOutput)
+		return "", errors.New(ErrEmptyOutput)
 	}
 
 	return result, nil
@@ -405,7 +406,7 @@ func (c *Client) filterGeminiOutput(output string) string {
 }
 
 // resolveRelativePaths resolves relative paths in the prompt to absolute paths
-func (c *Client) resolveRelativePaths(prompt string, baseDir string) (string, error) {
+func (c *Client) resolveRelativePaths(prompt string, baseDir string) (string, error) { //nolint:unparam // error return kept for future use
 	// Regular expression to match file paths
 	// This pattern matches:
 	// - ./file.txt, ../file.txt (explicit relative paths)

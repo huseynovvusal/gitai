@@ -30,3 +30,21 @@ func RegisterSuggestFlags(cmd *cobra.Command) {
 	_ = viper.BindPFlag("suggest.force_push", cmd.Flags().Lookup("force"))
 	_ = viper.BindPFlag("suggest.atomic", cmd.Flags().Lookup("atomic"))
 }
+
+// RegisterReviewFlags registers the flags for the review command and binds them to viper.
+func RegisterReviewFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("provider", "p", "", "AI provider to use (gpt|gemini|ollama|geminicli). If empty, uses env or config or default")
+	cmd.Flags().StringP("api_key", "k", "", "Optional API key to provide to AI provider")
+	cmd.Flags().Float64P("temperature", "t", 0.7, "Temperature for AI generation")
+	cmd.Flags().Int64("max_tokens", 1024, "Maximum tokens for AI generation")
+	cmd.Flags().StringP("hint", "H", "", "Provide a review focus hint (e.g. 'check for SQL injection')")
+	cmd.Flags().Bool("no-hint", false, "Skip the hint input prompt")
+	cmd.Flags().String("format", "text", "Output format: text or json")
+
+	_ = viper.BindPFlag("ai.provider", cmd.Flags().Lookup("provider"))
+	_ = viper.BindPFlag("ai.api_key", cmd.Flags().Lookup("api_key"))
+	_ = viper.BindPFlag("ai.temperature", cmd.Flags().Lookup("temperature"))
+	_ = viper.BindPFlag("ai.max_tokens", cmd.Flags().Lookup("max_tokens"))
+	_ = viper.BindPFlag("review.hint", cmd.Flags().Lookup("hint"))
+	_ = viper.BindPFlag("review.no-hint", cmd.Flags().Lookup("no-hint"))
+}

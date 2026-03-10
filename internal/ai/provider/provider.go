@@ -11,12 +11,13 @@ const (
 	ProviderGroq      Provider = "groq"
 	ProviderDeepSeek  Provider = "deepseek"
 	ProviderXAI       Provider = "xai"
+	ProviderClaudeCLI Provider = "claudecli"
 	ProviderNone      Provider = ""
 )
 
 func (p Provider) IsValid() bool {
 	switch p {
-	case ProviderGPT, ProviderGemini, ProviderOllama, ProviderNone, ProvideGeminiCLI, ProviderAnthropic, ProviderGroq, ProviderDeepSeek, ProviderXAI:
+	case ProviderGPT, ProviderGemini, ProviderOllama, ProviderNone, ProvideGeminiCLI, ProviderAnthropic, ProviderGroq, ProviderDeepSeek, ProviderXAI, ProviderClaudeCLI:
 		return true
 	default:
 		return false

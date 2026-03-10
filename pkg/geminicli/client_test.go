@@ -342,11 +342,6 @@ func TestConvenienceExecuteWithTimeout(t *testing.T) {
 // TestNewClient tests client creation
 func TestNewClient(t *testing.T) {
 	client := NewClient()
-
-	if client == nil {
-		t.Error("NewClient should return a valid client")
-	}
-
 	if client.timeout != DefaultTimeout {
 		t.Errorf("Expected default timeout %v, got %v", DefaultTimeout, client.timeout)
 	}
@@ -363,11 +358,6 @@ func TestNewClientWithConfig(t *testing.T) {
 	}
 
 	client := NewClientWithConfig(config)
-
-	if client == nil {
-		t.Error("NewClientWithConfig should return a valid client")
-	}
-
 	if client.timeout != customTimeout {
 		t.Errorf("Expected custom timeout %v, got %v", customTimeout, client.timeout)
 	}
@@ -413,8 +403,8 @@ func TestBuildGeminiCommandWithModel(t *testing.T) {
 		{
 			name:           "BasicPromptWithModel",
 			prompt:         "test prompt",
-			model:          "gemini-3-flash-preview-preview",
-			expectedLength: 5, // ["gemini", "-m", "gemini-3-flash-preview-preview", "-p", "test prompt"]
+			model:          "gemini-3-flash-preview",
+			expectedLength: 5, // ["gemini", "-m", "gemini-3-flash-preview", "-p", "test prompt"]
 			description:    "Should build Gemini command with model",
 		},
 		{
@@ -456,7 +446,7 @@ func TestBuildGeminiCommandWithModel(t *testing.T) {
 
 			expectedModel := tt.model
 			if expectedModel == "" {
-				expectedModel = "gemini-3-flash-preview-preview" // Default model
+				expectedModel = "gemini-3-flash-preview" // Default model
 			}
 
 			if len(cmd) > 2 && cmd[2] != expectedModel {

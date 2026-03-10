@@ -13,8 +13,14 @@ import (
 type Config struct {
 	AI       AIConfig
 	Suggest  SuggestConfig
+	Review   ReviewConfig
 	Security SecurityConfig
 	Ollama   OllamaConfig
+}
+
+type ReviewConfig struct {
+	Hint   string `mapstructure:"hint"`
+	NoHint bool   `mapstructure:"no-hint"`
 }
 
 type AIConfig struct {
